@@ -1,0 +1,24 @@
+
+-----------------------------------------------------------------------------
+-----------------------------------------------------------------------------
+
+Seiten von denen ich die Daten habe:
+
+	- https://www.statistik.at/web_de/statistiken/menschen_und_gesellschaft/bevoelkerung/volkszaehlungen_registerzaehlungen_abgestimmte_erwerbsstatistik/bevoelkerung_nach_demographischen_merkmalen/index.html
+	Daten zu Alter und Geschlecht
+	Download: 15.12.2021, 16:56
+(bevoelkerung_2019_nach_altersgruppen_geschlecht_und_bezirken_bzw._nuts_3-r)	(bevoelkerung_2019_nach_alter_in_einzeljahren_geschlecht_und_bundesland)
+
+	- https://ghsl.jrc.ec.europa.eu/download.php:
+	Daten zu Settlement in Europa; 
+	Download: 17.12.2021 7:04
+	(GHS_BUILT_LDS2014_GLOBE_R2018A_54009_250_V2_0_18_3)
+
+	- https://github.com/ginseng666/GeoJSON-TopoJSON-Austria
+	Daten zu Bezirk/Gemeinde Verteilung in Österreich;
+	Download: 15.12.2021, 17:00
+	(geodaten_Austria_Bezirksebene)
+	(geodaten_Austria_Bezirksebene.json)
+
+-----------------------------------------------------------------------------
+-----------------------------------------------------------------------------
