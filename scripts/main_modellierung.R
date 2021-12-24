@@ -1,4 +1,5 @@
 library(tidyverse)
+library(microbenchmark)
 
 #----------------------------------------------------------------
 
@@ -21,45 +22,42 @@ setwd("..")
 # Erstes Modell mit weniger agents
 
 # Zeitstempel fuer Infektion hinterlegen
-agents <- zeitstempel_hinterlegen(agents, "infected")
+agents_basic_model <- zeitstempel_hinterlegen(agents, "infected")
 
-tage <- 50
+tage <- 100
 
 tracker_cases <- data.frame(Tag = 0,
-                      S = sum(agents$susceptible),
-                      I = sum(agents$infected),
-                      R = sum(agents$removed))
+                      S = sum(agents_basic_model$susceptible),
+                      I = sum(agents_basic_model$infected),
+                      R = sum(agents_basic_model$removed),
+                      Neuinfektionen = 0)
 
 tracker_time <- data.frame(time = c())
-
-tracker_1 <- data.frame(Tag = 0,
-                        S = sum(agents$susceptible),
-                        I = sum(agents$infected),
-                        R = sum(agents$removed))
 
 for (day in 1:tage) {
   
   time_begin <- Sys.time()
+
+  kontakte <- kontakte_erstellen_neu(agents_basic_model)
+  agents_basic_model <- infected_status_aendern_neu(agents_basic_model, kontakte)
   
-  # Kontakte fuer jeden Agent pro Tag erstellen
-  agents <- kontakte_erstellen(agents)
-  
-  # WSK fuer Infektion pro Kontakt
-  agents <- infektion(agents)
-  agents <- infected_status_aendern(agents)
+  neuinfektionen <- agents_basic_model %>%
+    filter(infected == TRUE & time_infected == 0) %>%
+    nrow()
   
   # Sobald Zeit infected 7 ist -> nicht mehr infected sondern resistant
-  agents$infected[agents$time_infected == 7] <- FALSE
-  agents$removed[agents$time_infected == 7] <- TRUE
+  agents_basic_model$infected[agents_basic_model$time_infected == 7] <- FALSE
+  agents_basic_model$removed[agents_basic_model$time_infected == 7] <- TRUE
 
   # Time +1 falls man infected ist
-  agents$time_infected[agents$infected == TRUE] <- agents$time_infected[agents$infected == TRUE] + 1
+  agents_basic_model$time_infected[agents_basic_model$infected == TRUE] <- agents_basic_model$time_infected[agents_basic_model$infected == TRUE] + 1
   
   # Pro Tag Summe merken
   temp <- data.frame(Tag = day,
-                     S = sum(agents$susceptible),
-                     I = sum(agents$infected),
-                     R = sum(agents$removed))
+                     S = sum(agents_basic_model$susceptible),
+                     I = sum(agents_basic_model$infected),
+                     R = sum(agents_basic_model$removed),
+                     Neuinfektionen = neuinfektionen)
   
   tracker_cases <- tracker_cases %>%
     bind_rows(temp)
@@ -75,12 +73,60 @@ for (day in 1:tage) {
 mean(tracker_time$time)
 sum(tracker_time$time)
 
+test <- tracker_cases %>%
+  slice((n() - 7): (n() - 1))
+
+test <- tracker_cases %>%
+  slice(1:7)
+
+sum(test$Neuinfektionen) / length(agents_basic_model$Id_agent) * 100000
+
 ggplot(tracker_cases) +
   aes(x = Tag) +
   geom_line(aes(y = S), color = "green") +
   geom_line(aes(y = I), color = "red") +
   geom_line(aes(y = R)) +
+  #geom_line(aes(y = Neuinfektionen)) +
   ylim(0, length(agents$Id_agent))
+
+ggplot(tracker_cases) +
+  aes(x = Tag) +
+  geom_line(aes(y = S), color = "green") +
+  xlim(0, 5) +
+  ylim(78100, 78200)
+
+#----------------------------------------------------------------
+#----------------------------------------------------------------
+
+setwd("./data")
+test2 <- read_csv2("test.csv")
+setwd("..")
+
+test3 <- test2 %>%
+  filter(GKZ == 315) %>%
+  filter(AnzahlFaelleSum > 0) %>%
+  mutate(Tag = 1:n(), .after = Time) %>%
+  filter(Tag <= tage)
+
+ggplot(test3) +
+  aes(x = Tag, y = AnzahlFaelle) +
+  geom_line() +
+  geom_line(data = tracker_cases, aes(x = Tag, y = Neuinfektionen))
+  
+
+# Kontakte fuer jeden Agent pro Tag erstellen
+# microbenchmark(kontakte_erstellen(agents), times = 1L)
+# microbenchmark(kontakte_erstellen_neu(agents), times = 1L)
+
+#agents <- kontakte_erstellen(agents)
+
+# WSK fuer Infektion pro Kontakt
+# microbenchmark(infektion(agents), times = 1L)
+# agents <- infektion(agents)
+# microbenchmark(infected_status_aendern(agents), times = 1L)
+# agents <- infected_status_aendern(agents)
+
+#microbenchmark(infected_status_aendern_neu(agents, kontakte), times = 1L)
 
 #----------------------------------------------------------------
 #----------------------------------------------------------------
