@@ -86,7 +86,7 @@ ggplot(tracker_cases) +
   geom_line(aes(y = S), color = "green") +
   geom_line(aes(y = I), color = "red") +
   geom_line(aes(y = R)) +
-  #geom_line(aes(y = Neuinfektionen)) +
+  geom_line(aes(y = Neuinfektionen)) +
   ylim(0, length(agents$Id_agent))
 
 ggplot(tracker_cases) +
@@ -97,6 +97,7 @@ ggplot(tracker_cases) +
 
 #----------------------------------------------------------------
 #----------------------------------------------------------------
+#----------------------Real-Daten-Vergleich----------------------
 
 setwd("./data")
 test2 <- read_csv2("test.csv")
@@ -113,25 +114,11 @@ ggplot(test3) +
   geom_line() +
   geom_line(data = tracker_cases, aes(x = Tag, y = Neuinfektionen))
   
-
-# Kontakte fuer jeden Agent pro Tag erstellen
-# microbenchmark(kontakte_erstellen(agents), times = 1L)
-# microbenchmark(kontakte_erstellen_neu(agents), times = 1L)
-
-#agents <- kontakte_erstellen(agents)
-
-# WSK fuer Infektion pro Kontakt
-# microbenchmark(infektion(agents), times = 1L)
-# agents <- infektion(agents)
-# microbenchmark(infected_status_aendern(agents), times = 1L)
-# agents <- infected_status_aendern(agents)
-
-#microbenchmark(infected_status_aendern_neu(agents, kontakte), times = 1L)
-
 #----------------------------------------------------------------
 #----------------------------------------------------------------
 #------------------Basic Model mit for-Schleife------------------
 
+#DEPRECATED
 for (day in 1:tage) {
   
   time_begin <- Sys.time()

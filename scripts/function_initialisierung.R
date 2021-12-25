@@ -1,4 +1,48 @@
 
+#----------------------------------------------------------------
+#Bezirksdaten zum nachlesen
+bezirksdaten_sehen <- function(speichern = FALSE){
+  
+  file_district <- "/Users/danielkaras/Desktop/Masterarbeit/corona_modeling_austria/data/GeoDaten/geodaten_Austria_Bezirksebene.json"
+  
+  geo_raw_data_for_district <- fromJSON(file_district)
+  
+  # Bezirksnamen mit Bundesland und Iso
+  bezirksdate_nachlesen <- data.frame(name = geo_raw_data_for_district$features$properties$name,
+                                      Id_district = as.numeric(geo_raw_data_for_district$features$properties$iso)) %>%
+    arrange(by = Id_district)
+  
+  Bundesland <- data.frame(Id_bundesland = c(1,2,3,4,5,6,7,8,9),
+                           bundesland = c("Burgenland",
+                                          "Kärnten",
+                                          "Niederösterreich",
+                                          "Oberösterreich",
+                                          "Salzburg",
+                                          "Steiermarkt",
+                                          "Tirol",
+                                          "Vorarlberg",
+                                          "Wien"))
+  
+  bezirksdate_nachlesen <- bezirksdate_nachlesen %>%
+    mutate(Id_bundesland = as.numeric(substr(Id_district, 1, 1))) 
+  
+  bezirksdate_nachlesen <- bezirksdate_nachlesen %>%
+    right_join(Bundesland, by = "Id_bundesland") %>%
+    select(bundesland, name, Id_district)
+  
+  if (speichern == FALSE) {
+    
+    view(bezirksdate_nachlesen)
+    
+  } else {
+    
+    return(bezirksdate_nachlesen)
+    
+  }
+}
+
+
+
 # Koordinaten aus Rohdaten auswaehlen auf district Ebene
 koordinaten_auswaehlen <- function(genauigkeit, auswahl, daten) {
   
