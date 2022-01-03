@@ -15,75 +15,31 @@ file_municipality <- "/Users/danielkaras/Desktop/Masterarbeit/corona_modeling_au
 geo_raw_data_for_municipality <- fromJSON(file_municipality) 
 
 # Bezirk Melk beginnt immer mit 315 -> "^315"
-district <- "319" # Id fuer Melk
-indices <- which(str_detect(geo_raw_data_for_municipality$features$properties$iso, paste0("^", district)))
-iso <- as.numeric(geo_raw_data_for_municipality$features$properties$iso[indices])
-name <- geo_raw_data_for_municipality$features$properties$name[indices]
+# bezirksdaten_sehen() # Um Id auszuwaehlen
+district <- "315" # Id fuer Melk
 
-for (j in 1:length(indices)) {
-  
-  coordinates <- geo_raw_data_for_municipality$features$geometry$coordinates[[indices[j]]]
-  
-  laenge <- (length(coordinates)/2)
-  
-  X <- coordinates[1: laenge]
-  Y <- coordinates[(laenge + 1): (laenge * 2)]
-  
-  if (exists("coordinates_gesamt") == FALSE) {
-    
-    coordinates_gesamt <- data.frame(name = rep(name[j], laenge),
-                                     Id_district = rep(iso[j], laenge),
-                                     Id_point = seq(1, laenge),
-                                     X = X, 
-                                     Y = Y)
-    
-  } else {
-    
-    temp1 <- data.frame(name = rep(name[j], laenge),
-                        Id_district = rep(iso[j], laenge),
-                        Id_point = seq(1, laenge),
-                        X = X, 
-                        Y = Y)
-    
-    coordinates_gesamt <- coordinates_gesamt %>%
-      bind_rows(temp1)
-    
-  }
-}
-
+# Kooridnaten von Gemeiden waehlen
+coordinates_mumicipality <- koordinaten_auswaehlen_gemeinde(geo_raw_data_for_municipality, district)
+infos_mumicipality <- mittelpunkt_berechnen(coordinates_mumicipality)
 #FLAECHE VON POLYGON BERECHNEN -> plyarea VOM pracma PACKAGE
 
-for (j in unique(coordinates_gesamt$Id_district)) {
-  
-  if (exists("centre_gesamt") == FALSE) {
-    
-    temp1 <- coordinates_gesamt %>%
-      filter(Id_district == j) %>%
-      select(X,Y)
-    
-    centre_gesamt <- data.frame(Id_district = j,
-                                X = geosphere::centroid(temp1)[1],
-                                Y = geosphere::centroid(temp1)[2])
-    
-  } else {
-    
-    temp1 <- coordinates_gesamt %>%
-      filter(Id_district == j) %>%
-      select(X,Y)
-    
-    temp2 <- data.frame(Id_district = j,
-                        X = geosphere::centroid(temp1)[1],
-                        Y = geosphere::centroid(temp1)[2])
-    
-    centre_gesamt <- centre_gesamt %>%
-      bind_rows(temp2)
-  }
-}
+#TESTPLOT
+# ggplot(coordinates_mumicipality) +
+#   geom_polygon(aes(X,Y, fill = name), show.legend = FALSE) +
+#   geom_point(data = infos_mumicipality, aes(X,Y))
+
+distance_between_centre <- abstand_mittelpunkte_berechnen(infos_mumicipality)
 
 #TESTPLOT
-# ggplot(coordinates_gesamt) +
+# distance_matrix <- distance_between_centre %>%
+#   pivot_wider(names_from = centre_2, values_from = distance)
+# 
+# ggplot(coordinates_mumicipality) +
 #   geom_polygon(aes(X,Y, fill = name), show.legend = FALSE) +
-#   geom_point(data = centre_gesamt, aes(X,Y))
+#   geom_point(data = centre_municipality, aes(X,Y, color = distance_matrix$`31524`))
+
+infos_mumicipality <- bevoelkerungs_anzahl_name_hinzufuegen(infos_mumicipality, district)
+wsk_between_centre <- pendelwsk_berechnen(infos_mumicipality, distance_between_centre, speichern = TRUE)
 
 #----------------------------------------------------------------
 #----------------------------------------------------------------
@@ -93,14 +49,32 @@ dateiname <<- ""
 bevoelkerungszahlen <- 
   einlesen_und_bearbeite_bevoelkerlungszahlen("/Users/danielkaras/Desktop/Masterarbeit/corona_modeling_austria/data/Bevölkerung_nach_Alter_und_Geschlecht/bevoelkerung_2019_nach_altersgruppen_geschlecht_und_bezirken_bzw._nuts_3-r.xlsx",
                                               "/Users/danielkaras/Desktop/Masterarbeit/corona_modeling_austria/data/Bevölkerung_nach_Alter_und_Geschlecht/bevoelkerung_2019_nach_alter_in_einzeljahren_geschlecht_und_bundesland.xlsx",
-                                              "Melk")
+                                              district)
 bevoelkerungs_zahlen_district <- bevoelkerungszahlen$altersklasse
 bevoelkerungs_zahlen_einzeljahre <- bevoelkerungszahlen$einzeljahre
-anzahl_agents <- bevoelkerungs_zahlen_district$gesamt_einwohner
+anzahl_agents <- sum(infos_mumicipality$Anzahl)
 agents <- data.frame(Id_agent = seq(1, anzahl_agents, 1))
 agents <- geschlecht_erstellen(agents, bevoelkerungs_zahlen_district, anzahl_agents)
-agents <- alter_erstellen(agents, bevoelkerungszahlen, "Niederösterreich")
-# agents <- haushalt_erstellen(agents, triangles, anzahl_agents) # DEPRECATED
+agents <- alter_erstellen(agents, bevoelkerungszahlen, district)
+agents <- gemeinde_waehlen(agents, infos_mumicipality, anzahl_agents)
+
+#TESTPLOT
+# test <- agents %>%
+#   group_by(Id_municipality) %>%
+#   summarise(anzahl = n())
+# 
+# test2 <- infos_mumicipality %>%
+#   right_join(test, by = "Id_municipality")
+# 
+# ggplot(coordinates_mumicipality) +
+#   geom_polygon(aes(X,Y, fill = name), show.legend = FALSE) +
+#   geom_point(data = test2, aes(X,Y, color = anzahl))
+
+haushalts_gesamt_daten <- einlesen_und_bearbeite_haushaltszahlen("data/Haushalte_pro_Bundesland/privathaushalte_nach_haushaltsgroesse_bundeslaendern_und_alter_der_haushal.xlsx")
+infos_mumicipality <- haushaltsanzahl_erstellen(infos_mumicipality,
+                                                haushalts_gesamt_daten$haushalts_daten_bundesland,
+                                                agents)
+agents <- haushalte_auf_gemeindeebene_erstellen(agents, infos_mumicipality)
 agents <- gesundheit_erstellen(agents, 100)
 
 #----------------------------------------------------------------
@@ -118,14 +92,19 @@ setwd("..")
 #----------------------------------------------------------------
 #----------------------------------------------------------------
 #----------------------------------------------------------------
-#TESTCODE 
+#TESTCODE FUER GEMEINDE ZUGEHOERIGKEIT 
 
+#TESTCODE WAHRSCHEINLICHKEIT VON GEMEINDE ZU GEMEINDE
 
 
 #----------------------------------------------------------------
 #----------------------------------------------------------------
 #----------------------------------------------------------------
-#DEPRECATED
+#ERSTERVERSUCH AGENTSINITIALISIERUNG
+
+#----------------------------------------------------------------
+#----------------------------------------------------------------
+#----------------------Geodaten fuer Modell----------------------
 
 file <- "/Users/danielkaras/Desktop/Masterarbeit/corona_modeling_austria/data/GeoDaten/geodaten_Austria_Bezirksebene.json" # JSON File mit groberer Aufloesung
 # federal_state <- 3 # Waehle von 1-9 (3 == NOE)
@@ -165,6 +144,35 @@ triangles_plot <- triangles %>%
 #   aes(x = X, y = Y) +
 #   geom_polygon() +
 #   geom_polygon(data = temp, aes(X,Y, fill = area))
+
+#----------------------------------------------------------------
+#----------------------------------------------------------------
+#------------------------Agents erstellen------------------------
+
+dateiname <<- ""
+bevoelkerungszahlen <- 
+  einlesen_und_bearbeite_bevoelkerlungszahlen("/Users/danielkaras/Desktop/Masterarbeit/corona_modeling_austria/data/Bevölkerung_nach_Alter_und_Geschlecht/bevoelkerung_2019_nach_altersgruppen_geschlecht_und_bezirken_bzw._nuts_3-r.xlsx",
+                                              "/Users/danielkaras/Desktop/Masterarbeit/corona_modeling_austria/data/Bevölkerung_nach_Alter_und_Geschlecht/bevoelkerung_2019_nach_alter_in_einzeljahren_geschlecht_und_bundesland.xlsx",
+                                              "Melk")
+bevoelkerungs_zahlen_district <- bevoelkerungszahlen$altersklasse
+bevoelkerungs_zahlen_einzeljahre <- bevoelkerungszahlen$einzeljahre
+anzahl_agents <- bevoelkerungs_zahlen_district$gesamt_einwohner
+agents <- data.frame(Id_agent = seq(1, anzahl_agents, 1))
+agents <- geschlecht_erstellen(agents, bevoelkerungs_zahlen_district, anzahl_agents)
+agents <- alter_erstellen(agents, bevoelkerungszahlen, "Niederösterreich")
+# agents <- haushalt_erstellen(agents, triangles, anzahl_agents) # DEPRECATED
+agents <- gesundheit_erstellen(agents, 100)
+
+#----------------------------------------------------------------
+#----------------------------------------------------------------
+#----------------------Speichern der Agents----------------------
+
+# Datensatz immer speichern und neu laden
+dateiname <- paste0(dateiname, "_", format(lubridate::date(Sys.time()), "%Y_%m_%d"))
+setwd("./agents_initialisierung")
+save(agents, 
+     file = paste0(dateiname, ".RData"))
+setwd("..")
 
 
 
