@@ -667,7 +667,8 @@ haushalte_auf_gemeindeebene_erstellen <- function(daten_agent, daten_info) {
 pendelwsk_berechnen <- function(daten_info, 
                                 daten_distanzen, 
                                 distanz_wahl = 0.05,
-                                speichern) {
+                                speichern,
+                                bezirkswahl) {
   
   #TESTCODE
   # daten_info <- infos_mumicipality
@@ -712,9 +713,14 @@ pendelwsk_berechnen <- function(daten_info,
   
   if (speichern == TRUE) {
     
-    setwd("./agents_initialisierung")
+    temp1 <- bezirksdaten_sehen(speichern = TRUE)
+    
+    temp1 <- temp1 %>%
+      filter(Id_district == as.numeric(bezirkswahl))
+    
+    setwd("./pendel_wsk")
     save(daten_wsk, 
-         file = paste0("pendelwsk_", distanz_wahl, ".RData"))
+         file = paste0("district", temp1$name, "_", distanz_wahl, ".RData"))
     setwd("..")
     
   }

@@ -39,7 +39,11 @@ distance_between_centre <- abstand_mittelpunkte_berechnen(infos_mumicipality)
 #   geom_point(data = centre_municipality, aes(X,Y, color = distance_matrix$`31524`))
 
 infos_mumicipality <- bevoelkerungs_anzahl_name_hinzufuegen(infos_mumicipality, district)
-wsk_between_centre <- pendelwsk_berechnen(infos_mumicipality, distance_between_centre, speichern = TRUE)
+wsk_between_centre <- pendelwsk_berechnen(infos_mumicipality, 
+                                          distance_between_centre, 
+                                          speichern = TRUE,
+                                          bezirkswahl = district,
+                                          distanz_wahl = 0.001)
 
 #----------------------------------------------------------------
 #----------------------------------------------------------------
@@ -75,7 +79,7 @@ infos_mumicipality <- haushaltsanzahl_erstellen(infos_mumicipality,
                                                 haushalts_gesamt_daten$haushalts_daten_bundesland,
                                                 agents)
 agents <- haushalte_auf_gemeindeebene_erstellen(agents, infos_mumicipality)
-agents <- gesundheit_erstellen(agents, 100)
+agents <- gesundheit_erstellen(agents, 1)
 
 #----------------------------------------------------------------
 #----------------------------------------------------------------
