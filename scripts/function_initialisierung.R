@@ -599,7 +599,7 @@ haushaltsanzahl_erstellen <- function(daten_info, daten_haushalt_bundesland, dat
     haushalte_gesamt <- haushalte_gesamt %>%
       bind_rows(haushalte)
     
-    cat(paste0("Gemeinde mit folgender ID ist fertig: ", id))
+    cat(paste0("Gemeinde mit folgender ID ist fertig: ", id, "\n"))
     
   }
   
@@ -864,12 +864,13 @@ arbeit_zuweisen <- function(daten_agent, daten_info) {
 
 #----------------------------------------------------------------
 # Arbeitsplaetze zuweisen 
-arbeitsplaetze_zuweisen <- function(daten_agent, daten_info, moegliche_arbeitsplaetze) {
+arbeitsplaetze_zuweisen <- function(daten_agent, daten_info, moegliche_arbeitsplaetze, daten_wsk) {
   
   #TESTCODE
   # daten_info <- infos_mumicipality
   # daten_agent <- agents
   # moegliche_arbeitsplaetze <- arbeitsplaetze
+  # daten_wsk <- wsk_between_centre
   
   dateiname <<- paste0(dateiname, "_workplace")
   
@@ -982,7 +983,7 @@ arbeitsplaetze_zuweisen <- function(daten_agent, daten_info, moegliche_arbeitspl
     ein_agent <- temp4 %>%
       sample_n(1)
     
-    wsk_zu_gemeinde <- wsk_between_centre %>%
+    wsk_zu_gemeinde <- daten_wsk %>%
       filter(centre_j %in% unique(moegliche_arbeitsplaetze_1$Id_municipality))
     
     ein_agent <- ein_agent %>%
@@ -1022,7 +1023,7 @@ arbeitsplaetze_zuweisen <- function(daten_agent, daten_info, moegliche_arbeitspl
     
     if ((i %% 100) == 0 | i == nrow(wo_arbeiten_district)) {
       
-      cat(paste0(i, " von ", nrow(wo_arbeiten_district), " Agents haben einen Arbeitsplatz! \n"))
+      cat(paste0(i, " von ", nrow(wo_arbeiten_district), " Agents haben einen freien Arbeitsplatz! \n"))
       
     }
     
@@ -1045,6 +1046,315 @@ arbeitsplaetze_zuweisen <- function(daten_agent, daten_info, moegliche_arbeitspl
     mutate(Id_municipality_work = if_else(is.na(Id_municipality_work_new), Id_municipality_work, Id_municipality_work_new)) %>%
     mutate(Id_workplace = if_else(is.na(Id_workplace_new), Id_workplace, Id_workplace_new)) %>%
     select(- c(Id_workplace_new, Id_municipality_work_new))
+  
+  return(daten_agent)
+  
+}
+
+#----------------------------------------------------------------
+# Schuldaten hinzufuegen
+schuldaten_hinzufuegen <- function(daten_info) {
+  
+  #TESTCODE
+  # daten_info <- infos_mumicipality
+  
+  file_pupils <- "schuelerinnen_und_schueler_202021_nach_gemeinden_und_schultypen.xlsx"
+  file_schools <- "schulen_202021_nach_gemeinden_und_schultypen.xlsx"
+  
+  setwd("./data/Schulen_und_Kindergarten")
+  
+  pupils_raw <- read_excel(file_pupils, skip = 3)
+  schools_raw <- read_excel(file_schools, skip = 3)
+  
+  setwd("..")
+  setwd("..")
+  
+  colnames(schools_raw)[1:4] <- c("iso", "name", "gesamt", "Volksschule")
+  colnames(pupils_raw)[1:4] <- c("iso", "name", "gesamt", "Volksschule_Schueler")
+  
+  pupils_raw <- pupils_raw %>%
+    filter(iso != "alle") %>%
+    filter(! is.na(name))
+  
+  schools_raw <- schools_raw %>%
+    filter(iso != "alle") %>%
+    filter(! is.na(name))
+  
+  pupils_raw <- pupils_raw %>%
+    mutate(Unter_Oberstufe_Schueler = rowSums(across(5:18))) %>%
+    select(c("iso", "Volksschule_Schueler", "Unter_Oberstufe_Schueler"))
+  
+  schools_raw <- schools_raw %>%
+    mutate(Unter_Oberstufe = rowSums(across(5:18))) %>%
+    select(c("iso", "Volksschule", "Unter_Oberstufe"))
+  
+  schools_raw <- schools_raw %>%
+    mutate_all(as.numeric)
+  
+  pupils_raw <- pupils_raw %>%
+    mutate_all(as.numeric)
+  
+  daten_info <- daten_info %>%
+    left_join(schools_raw, by = c("Id_municipality" = "iso")) %>%
+    left_join(pupils_raw, by = c("Id_municipality" = "iso"))
+  
+  return(daten_info)
+  
+}
+
+#----------------------------------------------------------------
+# Volksschulplaetze erstellen
+volksschulplaetze_erstellen <- function(daten_info) {
+  
+  #TESTCODE
+  # daten_info <- infos_mumicipality
+  
+  moegliche_volksschulplaetze <- data.frame(Id_municipality = c(),
+                                            Id_volksschule = c())
+  
+  for (id in daten_info$Id_municipality) {
+    
+    temp1 <- daten_info %>%
+      filter(Id_municipality == id) %>%
+      select(Id_municipality, Volksschule, Volksschule_Schueler) 
+    
+    if (temp1$Volksschule != 0) {
+      
+      temp2 <- data.frame(Id_municipality = id,
+                          Id_volksschule = sample(1:temp1$Volksschule, temp1$Volksschule_Schueler, replace = TRUE))
+      
+      moegliche_volksschulplaetze <- moegliche_volksschulplaetze %>%
+        bind_rows(temp2)
+      
+    }
+    
+  }
+  
+  moegliche_volksschulplaetze$Id_schulplatz <- 1:nrow(moegliche_volksschulplaetze)
+  
+  return(moegliche_volksschulplaetze)
+  
+}
+
+#----------------------------------------------------------------
+# Volksschulen zuweisen
+volksschulen_zuweisen <- function(daten_agent, daten_info, daten_volkschulplaetze, daten_wsk) {
+  
+  #TESTCODE
+  # daten_agent <- agents
+  # daten_info <- infos_mumicipality
+  # daten_volkschulplaetze <- volksschulplaetze
+  # daten_wsk <- wsk_between_centre
+  
+  dateiname <<- paste0(dateiname, "_primarySchool")
+  
+  daten_agent_volksschule <- daten_agent %>%
+    filter(alter >= 7 & alter <= 10) %>% 
+    mutate(type_of_work = "primary_school")
+  
+  for (id in daten_info$Id_municipality) {
+    
+    schueler <- daten_agent_volksschule %>%
+      filter(Id_municipality == id)
+    
+    moegliche_plaetze <- daten_volkschulplaetze %>%
+      filter(Id_municipality == id)
+    
+    if (nrow(schueler) <= nrow(moegliche_plaetze)) {
+      
+      temp1 <- moegliche_plaetze %>%
+        sample_n(nrow(schueler))
+      
+      schueler$Id_workplace <- temp1$Id_volksschule
+      
+    } else {
+      
+      temp1 <- moegliche_plaetze %>%
+        sample_n(nrow(moegliche_plaetze))
+      
+      schueler$Id_workplace <- c(temp1$Id_volksschule, rep(0, nrow(schueler) - nrow(moegliche_plaetze)))
+      
+    }
+    
+    daten_volkschulplaetze <- daten_volkschulplaetze %>%
+      anti_join(temp1, by = "Id_schulplatz")
+    
+    schueler <- schueler %>%
+      select(Id_agent, type_of_work,  Id_workplace) %>%
+      rename(Id_workplace_new = Id_workplace,
+             type_of_work_new = type_of_work)
+    
+    daten_agent <- daten_agent %>%
+      left_join(schueler, by = "Id_agent") %>%
+      mutate(type_of_work = if_else(is.na(type_of_work_new), type_of_work, type_of_work_new),
+             Id_workplace = if_else(is.na(Id_workplace_new), Id_workplace, as.double(Id_workplace_new))) %>%
+      select(- c(type_of_work_new, Id_workplace_new))
+    
+  }
+  
+  daten_agent_volksschule_district <- daten_agent %>%
+    filter(type_of_work == "primary_school" & Id_workplace == 0) 
+  
+  anzahl_plaetze <- nrow(daten_volkschulplaetze)
+  anzahl_schueler <- nrow(daten_agent_volksschule_district)
+  
+  if (anzahl_schueler <= anzahl_plaetze) {
+    anzahl <- anzahl_schueler
+  } else {
+    anzahl <- anzahl_plaetze
+  }
+  
+  for (j in 1:anzahl) {
+    
+    temp2 <- daten_wsk %>%
+      filter(centre_j %in% unique(daten_volkschulplaetze$Id_municipality))
+    
+    ein_schueler <- daten_agent_volksschule_district %>%
+      sample_n(1) %>%
+      select(Id_agent, Id_municipality) %>%
+      left_join(temp2, by = c("Id_municipality" = "centre_i")) 
+    
+    ein_schueler <- ein_schueler %>%
+      left_join(daten_volkschulplaetze, by = c("centre_j" = "Id_municipality")) %>%
+      sample_n(1, weight = wsk)
+    
+    daten_volkschulplaetze <- daten_volkschulplaetze %>%
+      anti_join(ein_schueler, by = "Id_schulplatz")
+    
+    daten_agent_volksschule_district <- daten_agent_volksschule_district %>%
+      anti_join(ein_schueler, by = "Id_agent")
+    
+    ein_schueler <- ein_schueler %>%
+      select(Id_agent, Id_volksschule, centre_j) %>%
+      rename(Id_workplace_new = Id_volksschule,
+             Id_municipality_new = centre_j)
+    
+    daten_agent <- daten_agent %>%
+      left_join(ein_schueler, by = "Id_agent") %>%
+      mutate(Id_workplace = if_else(is.na(Id_workplace_new), Id_workplace, as.double(Id_workplace_new)),
+             Id_municipality_work = if_else(is.na(Id_municipality_new), Id_municipality_work, as.double(Id_municipality_new))) %>%
+      select(- c(Id_municipality_new, Id_workplace_new))
+    
+    if ((j %% 100) == 0 | j == anzahl) {
+      
+      cat(paste0(j, " von ", anzahl, " Agents haben einen freien Volksschulplatz! \n"))
+      
+    }
+  }
+  
+  daten_agent <- daten_agent %>%
+    mutate(Id_municipality_work = if_else(type_of_work == "primary_school" & Id_workplace == 0, 99999, Id_municipality_work))
+  
+  return(daten_agent)
+  
+}
+
+#----------------------------------------------------------------
+# Schulplaetze erstellen
+schulplaetze_erstellen <- function(daten_info) {
+  
+  #TESTCODE
+  # daten_info <- infos_mumicipality
+  
+  moegliche_schulplaetze <- data.frame(Id_municipality = c(),
+                                       Id_schule = c())
+  
+  for (id in daten_info$Id_municipality) {
+    
+    temp1 <- daten_info %>%
+      filter(Id_municipality == id) %>%
+      select(Id_municipality, Unter_Oberstufe, Unter_Oberstufe_Schueler) 
+    
+    if (temp1$Unter_Oberstufe != 0) {
+      
+      temp2 <- data.frame(Id_municipality = id,
+                          Id_schule = sample(1:temp1$Unter_Oberstufe, temp1$Unter_Oberstufe_Schueler, replace = TRUE))
+      
+      moegliche_schulplaetze <- moegliche_schulplaetze %>%
+        bind_rows(temp2)
+      
+    }
+    
+  }
+  
+  moegliche_schulplaetze$Id_schulplatz <- 1:nrow(moegliche_schulplaetze)
+  
+  return(moegliche_schulplaetze)
+  
+}
+
+#----------------------------------------------------------------
+# Schulen zuweisen
+schulen_zuweisen <- function(daten_agent, daten_info, daten_schulplaetze, daten_wsk) {
+  
+  #TESTCODE
+  # daten_agent <- agents
+  # daten_info <- infos_mumicipality
+  # daten_schulplaetze <- schulplaetze
+  # daten_wsk <- wsk_between_centre
+  
+  if (str_detect(dateiname, "primarySchool")) {
+    
+    dateiname <<- str_replace(dateiname, "primarySchool", "School")
+    
+  } else {
+    
+    dateiname <<- paste0(dateiname, "_highSchool")
+    
+  }
+  
+  daten_agent_schule <- daten_agent %>%
+    filter(type_of_work == "school")
+  
+  anzahl_plaetze <- nrow(daten_schulplaetze)
+  anzahl_schueler <- nrow(daten_agent_schule)
+  
+  if (anzahl_schueler <= anzahl_plaetze) {
+    anzahl <- anzahl_schueler
+  } else {
+    anzahl <- anzahl_plaetze
+  }
+  
+  for (j in 1:anzahl) {
+    
+    temp2 <- daten_wsk %>%
+      filter(centre_j %in% unique(daten_schulplaetze$Id_municipality))
+    
+    ein_schueler <- daten_agent_schule %>%
+      sample_n(1) %>%
+      select(Id_agent, Id_municipality) %>%
+      left_join(temp2, by = c("Id_municipality" = "centre_i")) 
+    
+    ein_schueler <- ein_schueler %>%
+      left_join(daten_schulplaetze, by = c("centre_j" = "Id_municipality")) %>%
+      sample_n(1, weight = wsk)
+    
+    daten_schulplaetze <- daten_schulplaetze %>%
+      anti_join(ein_schueler, by = "Id_schulplatz")
+    
+    daten_agent_schule <- daten_agent_schule %>%
+      anti_join(ein_schueler, by = "Id_agent")
+    
+    ein_schueler <- ein_schueler %>%
+      select(Id_agent, Id_schule, centre_j) %>%
+      rename(Id_workplace_new = Id_schule,
+             Id_municipality_new = centre_j)
+    
+    daten_agent <- daten_agent %>%
+      left_join(ein_schueler, by = "Id_agent") %>%
+      mutate(Id_workplace = if_else(is.na(Id_workplace_new), Id_workplace, as.double(Id_workplace_new)),
+             Id_municipality_work = if_else(is.na(Id_municipality_new), Id_municipality_work, as.double(Id_municipality_new))) %>%
+      select(- c(Id_municipality_new, Id_workplace_new))
+    
+    if ((j %% 100) == 0 | j == anzahl) {
+      
+      cat(paste0(j, " von ", anzahl, " Agents haben einen freien Schulplatz! \n"))
+      
+    }
+  }
+  
+  daten_agent <- daten_agent %>%
+    mutate(Id_municipality_work = if_else(type_of_work == "school" & Id_workplace == 0, 99999, Id_municipality_work))
   
   return(daten_agent)
   

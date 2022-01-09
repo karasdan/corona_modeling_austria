@@ -4,12 +4,20 @@ library(data.table)
 
 #----------------------------------------------------------------
 
+district <- "Melk"
+
 # file_agents <- "districtMelk_Niederösterreich_household_1infected_2022_01_04.RData"
-file_agents <- "districtMelk_Niederösterreich_household_workplace_1infected_2022_01_06.RData"
+# file_agents <- "districtMelk_Niederösterreich_household_workplace_primarySchool_1infected_2022_01_09.RData"
 # file_agents <- "districtMelk_Niederösterreich_100infected_2021_12_31.RData"
 # file_agents <- "districtRust(Stadt)_Burgenland_household_4infected_2021_12_19.RData"
 
-file_wsk <- "districtMelk_0.05.RData"
+switch(district,
+       "Melk" = {file_agents <- "districtMelk_Niederösterreich_household_workplace_School_1infected_2022_01_09.RData"
+                file_wsk <- "districtMelk_0.05.RData"},
+       "Gmünd" = {file_agents <- "districtGmünd_Niederösterreich_household_workplace_primarySchool_1infected_2022_01_09.RData"
+                  file_wsk <- "districtGmünd_0.05.RData"})
+
+# file_wsk <- "districtMelk_0.05.RData"
 # file_wsk <- "districtMelk_1.RData"
 # file_wsk <- "districtMelk_0.001.RData"
 
@@ -26,6 +34,16 @@ setwd("./scripts")
 source("function_modellierung.R")
 setwd("..")
 
+tage <- 10
+
+# Erstelle Goverment
+goverment <- data.frame(Tag = 1:tage,
+                        Lockdown = rep(FALSE, tage))
+
+# Lockdown von Tag 25 - 35
+# goverment <- goverment %>%
+#   mutate(Lockdown = if_else((Tag > 25 & Tag <= 50), TRUE, FALSE))
+
 #----------------------------------------------------------------
 #----------------------------------------------------------------
 #-----------------------Erstes Modell (SIR)----------------------
@@ -34,17 +52,11 @@ setwd("..")
 # Zeitstempel fuer Infektion hinterlegen
 agents_basic_model <- zeitstempel_hinterlegen(agents, "infected")
 
-tage <- 10
-
 tracker_cases_1 <- data.frame(Tag = 0,
                       S = sum(agents_basic_model$susceptible),
                       I = sum(agents_basic_model$infected),
                       R = sum(agents_basic_model$removed),
                       Neuinfektionen = 0)
-
-# Erstelle Goverment
-goverment <- data.frame(Tag = 1:tage,
-                        Lockdown = rep(FALSE, tage))
 
 tracker_time <- data.frame(time = c())
 
@@ -130,16 +142,6 @@ ggplot(tracker_cases_1) +
 # Zeitstempel fuer Infektion hinterlegen
 agents_basic_model <- zeitstempel_hinterlegen(agents, "infected")
 
-tage <- 10
-
-# Erstelle Goverment
-goverment <- data.frame(Tag = 1:tage,
-                        Lockdown = rep(FALSE, tage))
-
-# Lockdown von Tag 25 - 35
-# goverment <- goverment %>%
-#   mutate(Lockdown = if_else((Tag > 25 & Tag <= 50), TRUE, FALSE))
-
 tracker_cases_2 <- data.frame(Tag = 0,
                             S = sum(agents_basic_model$susceptible),
                             I = sum(agents_basic_model$infected),
@@ -224,16 +226,6 @@ ggplot(tracker_cases_2) +
 # Zeitstempel fuer Infektion hinterlegen
 agents_basic_model <- zeitstempel_hinterlegen(agents, "infected")
 
-tage <- 10
-
-# Erstelle Goverment
-goverment <- data.frame(Tag = 1:tage,
-                        Lockdown = rep(FALSE, tage))
-
-# Lockdown von Tag 25 - 35
-# goverment <- goverment %>%
-#   mutate(Lockdown = if_else((Tag > 25 & Tag <= 50), TRUE, FALSE))
-
 tracker_cases_3 <- data.frame(Tag = 0,
                             S = sum(agents_basic_model$susceptible),
                             I = sum(agents_basic_model$infected),
@@ -311,11 +303,199 @@ ggplot(tracker_cases_3) +
   #geom_line(aes(y = Neuinfektionen)) +
   ylim(0, length(agents$Id_agent))
 
+ggplot(tracker_cases_1) +
+  aes(x = Tag) +
+  geom_line(aes(y = I), color = "green") +
+  geom_line(aes(y = tracker_cases_2$I), color = "red") +
+  geom_line(aes(y = tracker_cases_3$I))
+
+#----------------------------------------------------------------
+#----------------------------------------------------------------
+#----------------------Viertes Modell (SIR)----------------------
+#Viertes Modell mit Haushalt, Arbeitsplatz und Volksschule hinzugenommen
+
+# Zeitstempel fuer Infektion hinterlegen
+agents_basic_model <- zeitstempel_hinterlegen(agents, "infected")
+
+tracker_cases_4 <- data.frame(Tag = 0,
+                              S = sum(agents_basic_model$susceptible),
+                              I = sum(agents_basic_model$infected),
+                              R = sum(agents_basic_model$removed),
+                              Neuinfektionen = 0)
+
+tracker_time <- data.frame(time = c())
+
+for (day in 1:tage) {
+  
+  time_begin <- Sys.time()
+  
+  goverment_day <- goverment %>%
+    filter(Tag == day)
+  
+  contacts <- data.frame(Id_agent = c(), 
+                         type_of_contact = c(), 
+                         Id_contact = c())
+  
+  contacts <- kontakte_erstellen_freizeit(agents_basic_model, 
+                                          contacts, 
+                                          daten_wsk,
+                                          goverment_day)
+  contacts <- kontakte_erstellen_haushalt(agents_basic_model, contacts)
+  contacts <- kontakte_erstellen_arbeitsplatz(agents_basic_model, contacts)
+  contacts <- kontakte_erstellen_volksschule(agents_basic_model, contacts)
+  contacts <- kontakte_erstellen_schule(agents_basic_model, contacts)
+  # contacts <- kontakte_erstellen_neu(agents_basic_model, household = TRUE, wsk = daten_wsk)
+  
+  agents_basic_model <- infected_status_aendern_neu(agents_basic_model, contacts)
+  
+  neuinfektionen <- agents_basic_model %>%
+    filter(infected == TRUE & time_infected == 0) %>%
+    nrow()
+  
+  # Sobald Zeit infected 7 ist -> nicht mehr infected sondern resistant
+  agents_basic_model$infected[agents_basic_model$time_infected == 7] <- FALSE
+  agents_basic_model$removed[agents_basic_model$time_infected == 7] <- TRUE
+  
+  # Time +1 falls man infected ist
+  agents_basic_model$time_infected[agents_basic_model$infected == TRUE] <- agents_basic_model$time_infected[agents_basic_model$infected == TRUE] + 1
+  
+  # Pro Tag Summe merken
+  temp <- data.frame(Tag = day,
+                     S = sum(agents_basic_model$susceptible),
+                     I = sum(agents_basic_model$infected),
+                     R = sum(agents_basic_model$removed),
+                     Neuinfektionen = neuinfektionen)
+  
+  tracker_cases_4 <- tracker_cases_4 %>%
+    bind_rows(temp)
+  
+  time_end <- Sys.time()
+  difference <- data.frame(time = time_end - time_begin)
+  tracker_time <- tracker_time %>%
+    bind_rows(difference)
+  
+  print(paste0("Tag:", day))
+}
+
+mean(tracker_time$time)
+sum(tracker_time$time)
+
+# test <- tracker_cases %>%
+#   slice((n() - 7): (n() - 1))
+# 
+# test <- tracker_cases %>%
+#   slice(1:7)
+# 
+# sum(test$Neuinfektionen) / length(agents_basic_model$Id_agent) * 100000
+
+ggplot(tracker_cases_4) +
+  aes(x = Tag) +
+  geom_line(aes(y = S), color = "green") +
+  geom_line(aes(y = I), color = "red") +
+  geom_line(aes(y = R)) +
+  #geom_line(aes(y = Neuinfektionen)) +
+  ylim(0, length(agents$Id_agent))
+
+ggplot(tracker_cases_1) +
+  aes(x = Tag) +
+  geom_line(aes(y = I), color = "green") +
+  geom_line(aes(y = tracker_cases_2$I), color = "red") +
+  geom_line(aes(y = tracker_cases_3$I), color = "blue") +
+  geom_line(aes(y = tracker_cases_4$I), color = "grey")
+
+#----------------------------------------------------------------
+#----------------------------------------------------------------
+#-----------------------Fuenftes Modell (SIR)----------------------
+# Fuenftes Modell Kontakt wie viertes plus Infektioese Zeit aendern!
+
+# Zeitstempel fuer Infektion hinterlegen
+zeiten <- data.frame(Id_agent = agents$Id_agent)
+zeiten <- zeit_erstellen_infiziert_infektioes(agents, zeiten)
+
+
+tracker_cases_1 <- data.frame(Tag = 0,
+                              S = sum(agents_basic_model$susceptible),
+                              I = sum(agents_basic_model$infected),
+                              R = sum(agents_basic_model$removed),
+                              Neuinfektionen = 0)
+
+tracker_time <- data.frame(time = c())
+
+for (day in 1:tage) {
+  
+  time_begin <- Sys.time()
+  
+  goverment_day <- goverment %>%
+    filter(Tag == day)
+  
+  contacts <- data.frame(Id_agent = c(), 
+                         type_of_contact = c(), 
+                         Id_contact = c())
+  
+  # contacts <- kontakte_erstellen_haushalt(agents_basic_model, contacts)
+  contacts <- kontakte_erstellen_freizeit(agents_basic_model, 
+                                          contacts, 
+                                          daten_wsk,
+                                          goverment_day)
+  # contacts <- kontakte_erstellen_neu(agents_basic_model, household = TRUE, wsk = daten_wsk)
+  
+  agents_basic_model <- infected_status_aendern_neu(agents_basic_model, contacts)
+  
+  neuinfektionen <- agents_basic_model %>%
+    filter(infected == TRUE & time_infected == 0) %>%
+    nrow()
+  
+  # Sobald Zeit infected 7 ist -> nicht mehr infected sondern resistant
+  agents_basic_model$infected[agents_basic_model$time_infected == 7] <- FALSE
+  agents_basic_model$removed[agents_basic_model$time_infected == 7] <- TRUE
+  
+  # Time +1 falls man infected ist
+  agents_basic_model$time_infected[agents_basic_model$infected == TRUE] <- agents_basic_model$time_infected[agents_basic_model$infected == TRUE] + 1
+  
+  # Pro Tag Summe merken
+  temp <- data.frame(Tag = day,
+                     S = sum(agents_basic_model$susceptible),
+                     I = sum(agents_basic_model$infected),
+                     R = sum(agents_basic_model$removed),
+                     Neuinfektionen = neuinfektionen)
+  
+  tracker_cases_1 <- tracker_cases_1 %>%
+    bind_rows(temp)
+  
+  time_end <- Sys.time()
+  difference <- data.frame(time = time_end - time_begin)
+  tracker_time <- tracker_time %>%
+    bind_rows(difference)
+  
+  print(paste0("Tag:", day))
+}
+
+mean(tracker_time$time)
+sum(tracker_time$time)
+
+# # test <- tracker_cases %>%
+# #   slice((n() - 7): (n() - 1))
+# # 
+# # test <- tracker_cases %>%
+# #   slice(1:7)
+# 
+# sum(test$Neuinfektionen) / length(agents_basic_model$Id_agent) * 100000
+
+ggplot(tracker_cases_1) +
+  aes(x = Tag) +
+  geom_line(aes(y = S), color = "green") +
+  geom_line(aes(y = I), color = "red") +
+  geom_line(aes(y = R)) +
+  #geom_line(aes(y = Neuinfektionen)) +
+  ylim(0, length(agents$Id_agent))
+
 #----------------------------------------------------------------
 #----------------------------------------------------------------
 #----------------------------Testcode----------------------------
 
-#Testcode fuer Kontakte am Arbeitsplatz
+#Testcode fuer Kontakte am Volksschule
+
+
 
 
 

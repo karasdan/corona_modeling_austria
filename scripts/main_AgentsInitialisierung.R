@@ -43,7 +43,7 @@ wsk_between_centre <- pendelwsk_berechnen(infos_mumicipality,
                                           distance_between_centre, 
                                           speichern = FALSE,
                                           bezirkswahl = district,
-                                          distanz_wahl = 0.01)
+                                          distanz_wahl = 0.05)
 
 #----------------------------------------------------------------
 #----------------------------------------------------------------
@@ -79,14 +79,21 @@ infos_mumicipality <- haushaltsanzahl_erstellen(infos_mumicipality,
                                                 haushalts_gesamt_daten$haushalts_daten_bundesland,
                                                 agents)
 agents <- haushalte_auf_gemeindeebene_erstellen(agents, infos_mumicipality)
+
 arbeitsplatz_daten <- einlesen_und_bearbeite_arbeitsplatzdaten("data/Arbeitsstaetten/gemeindeergebnisse_der_abgestimmten_erwerbsstatistik_und_arbeitsstaettenza.xlsx")
 infos_mumicipality <- arbeitsplatzdaten_hinzufuegen(infos_mumicipality, arbeitsplatz_daten)
-
 arbeitsplaetze <- arbeitsplaetze_erstellen(infos_mumicipality)
 agents <- arbeit_zuweisen(agents, infos_mumicipality)
-agents <- arbeitsplaetze_zuweisen(agents, infos_mumicipality, arbeitsplaetze)
+agents <- arbeitsplaetze_zuweisen(agents, infos_mumicipality, arbeitsplaetze, wsk_between_centre)
 
-agents <- gesundheit_erstellen(agents, 100)
+infos_mumicipality <- schuldaten_hinzufuegen(infos_mumicipality)
+volksschulplaetze <- volksschulplaetze_erstellen(infos_mumicipality)
+agents <- volksschulen_zuweisen(agents, infos_mumicipality, volksschulplaetze, wsk_between_centre)
+
+schulplaetze <- schulplaetze_erstellen(infos_mumicipality)
+agents <- schulen_zuweisen(agents, infos_mumicipality, schulplaetze, wsk_between_centre)
+
+agents <- gesundheit_erstellen(agents, 1)
 
 #----------------------------------------------------------------
 #----------------------------------------------------------------
@@ -103,6 +110,68 @@ setwd("..")
 #----------------------------------------------------------------
 #----------------------------------------------------------------
 #----------------------------------------------------------------
+#TESTCODE FUER SCHULEN ERSTELLEN
+#TESTCODE
+daten_agent <- agents
+daten_info <- infos_mumicipality
+daten_schulplaetze <- schulplaetze
+daten_wsk <- wsk_between_centre
+
+daten_agent_schule <- daten_agent %>%
+  filter(type_of_work == "school")
+
+anzahl_plaetze <- nrow(daten_schulplaetze)
+anzahl_schueler <- nrow(daten_agent_schule)
+
+if (anzahl_schueler <= anzahl_plaetze) {
+  anzahl <- anzahl_schueler
+} else {
+  anzahl <- anzahl_plaetze
+}
+
+for (j in 1:anzahl) {
+  
+  temp2 <- daten_wsk %>%
+    filter(centre_j %in% unique(daten_schulplaetze$Id_municipality))
+  
+  ein_schueler <- daten_agent_schule %>%
+    sample_n(1) %>%
+    select(Id_agent, Id_municipality) %>%
+    left_join(temp2, by = c("Id_municipality" = "centre_i")) 
+  
+  ein_schueler <- ein_schueler %>%
+    left_join(daten_schulplaetze, by = c("centre_j" = "Id_municipality")) %>%
+    sample_n(1, weight = wsk)
+  
+  daten_schulplaetze <- daten_schulplaetze %>%
+    anti_join(ein_schueler, by = "Id_schulplatz")
+  
+  daten_agent_schule <- daten_agent_schule %>%
+    anti_join(ein_schueler, by = "Id_agent")
+  
+  ein_schueler <- ein_schueler %>%
+    select(Id_agent, Id_schule, centre_j) %>%
+    rename(Id_workplace_new = Id_schule,
+           Id_municipality_new = centre_j)
+  
+  daten_agent <- daten_agent %>%
+    left_join(ein_schueler, by = "Id_agent") %>%
+    mutate(Id_workplace = if_else(is.na(Id_workplace_new), Id_workplace, as.double(Id_workplace_new)),
+           Id_municipality_work = if_else(is.na(Id_municipality_new), Id_municipality_work, as.double(Id_municipality_new))) %>%
+    select(- c(Id_municipality_new, Id_workplace_new))
+  
+  if ((j %% 100) == 0 | j == anzahl) {
+    
+    cat(paste0(j, " von ", anzahl, " Agents haben einen freien Schulplatz! \n"))
+    
+  }
+}
+
+daten_agent <- daten_agent %>%
+  mutate(Id_municipality_work = if_else(type_of_work == "school" & Id_workplace == 0, 99999, Id_municipality_work))
+
+
+
 #TESTCODE FUER ARBEITSPLATZ ERSTELLUNG
 
 daten_info <- infos_mumicipality

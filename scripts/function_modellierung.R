@@ -23,6 +23,35 @@ zeitstempel_hinterlegen <- function(daten_agent, state) {
   return(daten_agent)
 }
 
+# Zeitstempel fuer State hinterlegen
+zeit_erstellen_infiziert_infektioes <- function(daten_agent, daten_zeit) {
+  
+  #TESTCODE
+  # daten_agent <- agents
+  # daten_zeit <- zeiten
+  
+  # Zeitname -> entweder infected, quarantined, ...
+  states <- c("time_infected", "time_infectious", "expected_incubation", "expected_latency")
+  
+  daten_zeit[states] <- 0
+  
+  # Falls schon infiziert auf 1 setzen (ob sinnvoll?) -> vielleicht weglassen
+  temp1 <- daten_agent %>%
+    filter(infected == TRUE)
+  
+  incubation <- round((rbeta(nrow(temp1), 3.1, 8.9)*(14 - 2) + 2))
+  latency <- incubation - 2
+  
+  daten_zeit <- daten_zeit %>%
+    mutate(time_infected = if_else(Id_agent %in% temp1$Id_agent, 1, time_infected))
+  
+  daten_zeit <- daten_zeit %>%
+    mutate(expected_incubation = if_else(time_infected == 1, incubation, expected_incubation),
+           expected_latency = if_else(time_infected == 1, latency, expected_latency))
+  
+  return(daten_zeit)
+}
+
 #----------------------------------------------------------------
 # Haushaltskontakte ersellen
 kontakte_erstellen_haushalt <- function(daten_agent, daten_kontakte) {
@@ -166,6 +195,7 @@ kontakte_erstellen_arbeitsplatz <- function(daten_agent, daten_kontakte) {
   # Fuege zu jedem Id_agent jedes Haushaltsmitglied hinzu 
   # -> Liste: Kombination von jedem Agent mit jedem Haushaltsmitglied
   kontakt_workplace <- daten_agent %>%
+    filter(type_of_work == "work") %>%
     right_join(work_with_agent, by = c("Id_municipality_work", "Id_workplace")) 
   
   kontakt_workplace <- kontakt_workplace %>%
@@ -192,6 +222,119 @@ kontakte_erstellen_arbeitsplatz <- function(daten_agent, daten_kontakte) {
   
 }
 
+#----------------------------------------------------------------
+# Kontakte fuer Volksschule erstellen 
+kontakte_erstellen_volksschule <- function(daten_agent, daten_kontakte) {
+  
+  #TESTCODE
+  # daten_agent <- agents_basic_model
+  # daten_kontakte <- contacts
+  
+  primary_school_agents <- daten_agent %>%
+    filter(type_of_work == "primary_school")
+  
+  primary_school_agents_in_district <- primary_school_agents %>%
+    filter(Id_municipality_work != 99999)
+  
+  # Anzahl an Kontakten fuer alle Agents erstellen
+  kontakte <- data.frame(Id_agent = primary_school_agents_in_district$Id_agent, 
+                         contacts = round(rgamma(length(primary_school_agents_in_district$Id_agent),4.64,1)))
+  
+  # Arbeit + darin arbeitende Agents
+  school_with_agent <- primary_school_agents_in_district %>%
+    select(Id_municipality_work, Id_workplace, Id_agent) %>%
+    arrange(Id_municipality_work, Id_workplace)
+  
+  # Umbenennen von Id_agent zu Id_contact -> damit ich nachher joinen kann
+  school_with_agent <- school_with_agent %>%
+    rename(Id_contact = Id_agent) 
+  
+  # Fuege zu jedem Id_agent jedes Haushaltsmitglied hinzu 
+  # -> Liste: Kombination von jedem Agent mit jedem Haushaltsmitglied
+  kontakt_school <- daten_agent %>%
+    filter(type_of_work == "primary_school") %>%
+    right_join(school_with_agent, by = c("Id_municipality_work", "Id_workplace")) 
+  
+  kontakt_school <- kontakt_school %>%
+    right_join(kontakte, by = "Id_agent")
+  
+  kontakt_school <- kontakt_school %>%
+    filter(Id_agent != Id_contact)
+  
+  kontakt_school <- kontakt_school %>%
+    group_by(Id_agent) %>%
+    sample_n(unique(contacts), replace = TRUE) %>%
+    ungroup()
+  
+  kontakt_school <- kontakt_school %>%
+    mutate(type_of_contact = "primary_school") %>%
+    select(Id_agent, type_of_contact, Id_contact)
+  
+  # Zu Kontaktdaten hinzufuegen und treffen mit sich selbst loeschen
+  daten_kontakte <- daten_kontakte %>%
+    bind_rows(kontakt_school) %>%
+    filter(! Id_agent == Id_contact)
+  
+  return(daten_kontakte)
+  
+}
+
+#----------------------------------------------------------------
+# Kontakte fuer restliche Schule erstellen 
+kontakte_erstellen_schule <- function(daten_agent, daten_kontakte) {
+  
+  #TESTCODE
+  # daten_agent <- agents_basic_model
+  # daten_kontakte <- contacts
+  
+  high_school_agents <- daten_agent %>%
+    filter(type_of_work == "school")
+  
+  high_school_agents_in_district <- high_school_agents %>%
+    filter(Id_municipality_work != 99999)
+  
+  # Anzahl an Kontakten fuer alle Agents erstellen
+  kontakte <- data.frame(Id_agent = high_school_agents_in_district$Id_agent, 
+                         contacts = round(rgamma(length(high_school_agents_in_district$Id_agent),4.64,1)))
+  
+  # Arbeit + darin arbeitende Agents
+  school_with_agent <- high_school_agents_in_district %>%
+    select(Id_municipality_work, Id_workplace, Id_agent) %>%
+    arrange(Id_municipality_work, Id_workplace)
+  
+  # Umbenennen von Id_agent zu Id_contact -> damit ich nachher joinen kann
+  school_with_agent <- school_with_agent %>%
+    rename(Id_contact = Id_agent) 
+  
+  # Fuege zu jedem Id_agent jedes Haushaltsmitglied hinzu 
+  # -> Liste: Kombination von jedem Agent mit jedem Haushaltsmitglied
+  kontakt_school <- daten_agent %>%
+    filter(type_of_work == "school") %>%
+    right_join(school_with_agent, by = c("Id_municipality_work", "Id_workplace")) 
+  
+  kontakt_school <- kontakt_school %>%
+    right_join(kontakte, by = "Id_agent")
+  
+  kontakt_school <- kontakt_school %>%
+    filter(Id_agent != Id_contact)
+  
+  kontakt_school <- kontakt_school %>%
+    group_by(Id_agent) %>%
+    sample_n(unique(contacts), replace = TRUE) %>%
+    ungroup()
+  
+  kontakt_school <- kontakt_school %>%
+    mutate(type_of_contact = "high_school") %>%
+    select(Id_agent, type_of_contact, Id_contact)
+  
+  # Zu Kontaktdaten hinzufuegen und treffen mit sich selbst loeschen
+  daten_kontakte <- daten_kontakte %>%
+    bind_rows(kontakt_school) %>%
+    filter(! Id_agent == Id_contact)
+  
+  return(daten_kontakte)
+  
+}
 
 #----------------------------------------------------------------
 # Infektionsstatus aendern
