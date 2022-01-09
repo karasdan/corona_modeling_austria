@@ -466,6 +466,70 @@ einlesen_und_bearbeite_haushaltszahlen <- function(path_haushalt){
    
 }
 
+#----------------------------------------------------------------
+# Einlesen und bearbeiten Arbeitsplatzdaten
+einlesen_und_bearbeite_arbeitsplatzdaten <- function(path_arbeitsplatz) {
+  
+  #TESTCODE
+  # path_arbeitsplatz <- "data/Arbeitsstaetten/gemeindeergebnisse_der_abgestimmten_erwerbsstatistik_und_arbeitsstaettenza.xlsx"
+  
+  daten_workplace_raw <- read_excel(path_arbeitsplatz)
+  
+  colnames(daten_workplace_raw) <- daten_workplace_raw[3,]
+  colnames(daten_workplace_raw)[1:2] <- c("iso", "name")
+  colnames(daten_workplace_raw) <- gsub(" ", "", colnames(daten_workplace_raw))
+  colnames(daten_workplace_raw) <- gsub("\n", "", colnames(daten_workplace_raw))
+  colnames(daten_workplace_raw) <- gsub("\r", "", colnames(daten_workplace_raw))
+  
+  daten_workplace_raw <- daten_workplace_raw %>%
+    filter(! is.na(name)) %>%
+    filter(! is.na(AnteilderPersonenunter15Jahren)) %>%
+    mutate(iso = as.numeric(iso))
+  
+  daten_workplace_raw <- daten_workplace_raw %>%
+    filter(nchar(iso) > 1)
+  
+  temp1 <- daten_workplace_raw %>%
+    filter(nchar(iso) == 5) %>%
+    mutate(iso_district = substr(iso, 1, 3))
+  
+  temp2 <- daten_workplace_raw %>%
+    filter(nchar(iso) == 3) %>%
+    filter(! (iso %in% unique(temp1$iso_district))) %>%
+    mutate(iso = iso * 100 + 1)
+  
+  temp1 <- temp1 %>%
+    select(- iso_district)
+  
+  daten_workplace <- temp1 %>%
+    bind_rows(temp2) %>%
+    arrange(iso)
+  
+  return(daten_workplace)
+  
+}
+
+#----------------------------------------------------------------
+# Hinzufuegen der wihtigen Daten pro Bezirk
+arbeitsplatzdaten_hinzufuegen <- function(daten_info, daten_arbeitsplatz) {
+  
+  #TESTCODE 
+  # daten_info <- infos_mumicipality
+  # daten_arbeitsplatz <- arbeitsplatz_daten
+  
+  daten_arbeitsplatz <- daten_arbeitsplatz %>%
+    select(iso, `AnteilderAuspendler/-innenandenaktivErwerbs-tätigenamWohnort`, `Arbeitslosenquote(15Jahreundälter)`, Arbeitsstätten, BeschäftigteindenArbeitsstätten) %>%
+    rename(Id_municipality = iso) %>%
+    mutate_all(as.numeric)
+  
+  daten_info <- daten_info %>%
+    left_join(daten_arbeitsplatz, by = "Id_municipality")
+  
+  return(daten_info)
+  
+}
+
+#----------------------------------------------------------------
 # Haushaltsanzahl pro Gemeinde erstellen 
 haushaltsanzahl_erstellen <- function(daten_info, daten_haushalt_bundesland, daten_agents) {
   
@@ -535,7 +599,7 @@ haushaltsanzahl_erstellen <- function(daten_info, daten_haushalt_bundesland, dat
     haushalte_gesamt <- haushalte_gesamt %>%
       bind_rows(haushalte)
     
-    print(paste0("Bezirk mit folgender ID ist fertig: ", id))
+    cat(paste0("Gemeinde mit folgender ID ist fertig: ", id))
     
   }
   
@@ -726,6 +790,263 @@ pendelwsk_berechnen <- function(daten_info,
   }
   
   return(daten_wsk)
+  
+}
+
+#----------------------------------------------------------------
+# Moegliche Arbeitsplaetze erstellen
+arbeitsplaetze_erstellen <- function(daten_info) {
+  
+  #TESTCODE
+  # daten_info <- infos_mumicipality
+  
+  # moegliche Arbeitsplaetze erstellen
+  moegliche_arbeitsplaetze <- data.frame(Id_municipality = c(),
+                                         Arbeitsstaette = c())
+  
+  for (id in daten_info$Id_municipality) {
+    
+    temp1 <- daten_info %>%
+      filter(Id_municipality == id) %>%
+      select(Id_municipality, Arbeitsstätten, BeschäftigteindenArbeitsstätten) 
+    
+    temp2 <- data.frame(Id_municipality = id,
+                        Arbeitsstaette = sample(1:temp1$Arbeitsstätten, temp1$BeschäftigteindenArbeitsstätten, replace = TRUE))
+    
+    moegliche_arbeitsplaetze <- moegliche_arbeitsplaetze %>%
+      bind_rows(temp2)
+    
+  }
+  
+  moegliche_arbeitsplaetze$Id_arbeitsplatz <- 1:nrow(moegliche_arbeitsplaetze)
+  
+  return(moegliche_arbeitsplaetze)
+  
+}
+
+#----------------------------------------------------------------
+# Arbeit pro Agent erstellen
+arbeit_zuweisen <- function(daten_agent, daten_info) {
+  
+  #TESTCODE
+  # daten_agent <- agents
+  # daten_info <- infos_municipitality
+  
+  daten_agent <- daten_agent %>%
+    mutate(type_of_work = "work",
+           Id_municipality_work = Id_municipality,
+           Id_workplace = 0)
+  
+  temp1 <- daten_info %>%
+    select(Id_municipality, `Arbeitslosenquote(15Jahreundälter)`) %>%
+    rename(Arbeitslosenquote = `Arbeitslosenquote(15Jahreundälter)`)
+  
+  daten_agent <- daten_agent %>%
+    left_join(temp1, by = "Id_municipality") %>%
+    mutate(prob_unemployed = runif(n()) * 100)
+  
+  daten_agent <- daten_agent %>%
+    mutate(type_of_work = if_else(prob_unemployed <= Arbeitslosenquote & alter > 18 & alter < 65, 
+                                  "unemployed", 
+                                  type_of_work)) %>%
+    select(- c(prob_unemployed, Arbeitslosenquote))
+  
+  # Agents in Schule, Pension usw schicken
+  daten_agent <- daten_agent %>%
+    mutate(type_of_work = if_else(alter >= 65, "pension", type_of_work)) %>%
+    mutate(type_of_work = if_else(alter > 6 & alter <= 18, "school", type_of_work)) %>%
+    mutate(type_of_work = if_else(alter >= 3 & alter <= 6, "kindergarden", type_of_work)) %>%
+    mutate(type_of_work = if_else(alter < 3, "child", type_of_work))
+  
+  return(daten_agent)
+  
+}
+
+#----------------------------------------------------------------
+# Arbeitsplaetze zuweisen 
+arbeitsplaetze_zuweisen <- function(daten_agent, daten_info, moegliche_arbeitsplaetze) {
+  
+  #TESTCODE
+  # daten_info <- infos_mumicipality
+  # daten_agent <- agents
+  # moegliche_arbeitsplaetze <- arbeitsplaetze
+  
+  dateiname <<- paste0(dateiname, "_workplace")
+  
+  wo_arbeiten <- data.frame(Id_agent = c(),
+                            Id_municipality = c(),
+                            arbeiten = c())
+  
+  bundesland <- as.numeric(substr(daten_agent$Id_municipality[1], 1, 1))
+  
+  # Percentage liste von Niki Popper Paper -> letzten beiden zusammengefasst!!!
+  percentage <- switch(bundesland,
+                       c(0.26, 0.21, 0.53), #Burgenland
+                       c(0.46, 0.16, 0.38), #Kaernten
+                       c(0.29, 0.2, 0.51),  #Niederoesterreich
+                       c(0.35, 0.24, 0.41), #Oberoesterreich
+                       c(0.46, 0.21, 0.33), #Salzburg
+                       c(0.42, 0.23, 0.35), #Steiermark
+                       c(0.41, 0.3, 0.29),  #Tirol
+                       c(0.37, 0.35, 0.28), #Vorarlberg
+                       c(0.01, 0.04, 0.95)  #Wien
+  )
+  
+  prob2 <- c(percentage[2] / sum(percentage[2:3]), percentage[3] / sum(percentage[2:3]))
+  
+  for (id in daten_info$Id_municipality) {
+    
+    daten_agent_municipaltiy <- daten_agent %>%
+      filter(Id_municipality == id & type_of_work == "work")
+    
+    daten_info_municipality <- daten_info %>%
+      filter(Id_municipality == id)
+    
+    number_of_working_people <- nrow(daten_agent_municipaltiy)
+    
+    prob <- c(daten_info_municipality$`AnteilderAuspendler/-innenandenaktivErwerbs-tätigenamWohnort`,
+              100 - daten_info_municipality$`AnteilderAuspendler/-innenandenaktivErwerbs-tätigenamWohnort`)
+    
+    arbeiten <- sample(c("o", "m"), number_of_working_people, prob = prob, replace = TRUE)
+    
+    temp3 <- data.frame(Id_agent = daten_agent_municipaltiy$Id_agent,
+                        Id_municipality = daten_agent_municipaltiy$Id_municipality, 
+                        arbeiten = arbeiten)
+    
+    temp3 <- temp3 %>%
+      group_by(arbeiten) %>%
+      mutate(arbeiten = if_else(arbeiten != "m", 
+                                sample(c("d", "o"), n(), prob = prob2, replace = TRUE),
+                                arbeiten)) %>%
+      ungroup()
+    
+    wo_arbeiten <- wo_arbeiten %>%
+      bind_rows(temp3)
+    
+  }
+  
+  wo_arbeiten <- wo_arbeiten %>%
+    mutate(Id_municipality_work = if_else(arbeiten == "m", Id_municipality, 99999))
+  
+  wo_arbeiten_municipality <- wo_arbeiten %>%
+    filter(arbeiten == "m")
+  
+  wo_arbeiten_district <- wo_arbeiten %>%
+    filter(arbeiten == "d")
+  
+  wo_arbeiten_other <- wo_arbeiten %>%
+    filter(arbeiten == "o") %>%
+    mutate(Id_workplace = 0)
+  
+  # beginnen mit aufteilen der Arbeitsplaetze auf jene die in der Gemeinde bleiben
+  wo_arbeiten_municipality <- wo_arbeiten_municipality %>%
+    mutate(Id_workplace = 0)
+  
+  moegliche_arbeitsplaetze_1 <- moegliche_arbeitsplaetze
+  
+  for (id in unique(wo_arbeiten_municipality$Id_municipality_work)) {
+    
+    temp1 <- wo_arbeiten_municipality %>%
+      filter(Id_municipality_work == id)
+    
+    moegliche_arbeitsplaetze_municipality <- moegliche_arbeitsplaetze_1 %>%
+      filter(Id_municipality == id)
+    
+    workplace_id <- moegliche_arbeitsplaetze_municipality %>%
+      sample_n(nrow(temp1), replace = FALSE)
+    
+    moegliche_arbeitsplaetze_1 <- moegliche_arbeitsplaetze_1 %>%
+      anti_join(workplace_id, by = "Id_arbeitsplatz")
+    
+    temp1$Id_workplace <- workplace_id$Arbeitsstaette
+    
+    temp1 <- temp1 %>%
+      select(Id_agent, Id_workplace) %>%
+      rename(Id_workplace_new = Id_workplace)
+    
+    wo_arbeiten_municipality <- wo_arbeiten_municipality %>%
+      left_join(temp1, by = "Id_agent") %>%
+      mutate(Id_workplace = if_else(is.na(Id_workplace_new), Id_workplace, as.double(Id_workplace_new))) %>%
+      select(- Id_workplace_new)
+    
+  }
+  
+  # beginnen mit aufteilen der Arbeitsplaetze auf jene die in die in andere Gemeinden gehen 
+  wo_arbeiten_district <- wo_arbeiten_district %>%
+    mutate(Id_workplace = 0)
+  
+  temp4 <- wo_arbeiten_district
+  
+  for (i in 1:nrow(wo_arbeiten_district)) {
+    
+    ein_agent <- temp4 %>%
+      sample_n(1)
+    
+    wsk_zu_gemeinde <- wsk_between_centre %>%
+      filter(centre_j %in% unique(moegliche_arbeitsplaetze_1$Id_municipality))
+    
+    ein_agent <- ein_agent %>%
+      left_join(wsk_zu_gemeinde, by = c("Id_municipality" = "centre_i")) %>%
+      filter(Id_municipality != centre_j) %>%
+      sample_n(1, weight = wsk)
+    
+    ein_agent <- ein_agent %>%
+      mutate(Id_municipality_work = centre_j) %>%
+      select(- c(centre_j, wsk))
+    
+    moegliche_arbeitsplaetze_municipality <- moegliche_arbeitsplaetze_1 %>%
+      filter(Id_municipality == ein_agent$Id_municipality_work)
+    
+    workplace_id <- moegliche_arbeitsplaetze_municipality %>%
+      sample_n(1, replace = FALSE)
+    
+    moegliche_arbeitsplaetze_1 <- moegliche_arbeitsplaetze_1 %>%
+      anti_join(workplace_id, by = "Id_arbeitsplatz")
+    
+    ein_agent$Id_workplace <- workplace_id$Arbeitsstaette
+    
+    # ein_agent <- ein_agent %>%
+    #   select(Id_agent, Id_municipality_work, Id_workplace)
+    
+    # test <- wo_arbeiten_district %>%
+    #   left_join(ein_agent, by = "Id_agent") %>%
+    #   mutate(Id_workplace = if_else(is.na(Id_workplace_new), Id_workplace, as.double(Id_workplace_new))) %>%
+    #   select(- Id_workplace_new)
+    
+    wo_arbeiten_district <- wo_arbeiten_district %>%
+      mutate(Id_municipality_work = if_else(Id_agent == ein_agent$Id_agent, ein_agent$Id_municipality_work, Id_municipality_work)) %>%
+      mutate(Id_workplace = if_else(Id_agent == ein_agent$Id_agent, as.double(ein_agent$Id_workplace), Id_workplace))
+    
+    temp4 <- temp4 %>%
+      anti_join(ein_agent, by = "Id_agent")
+    
+    if ((i %% 100) == 0 | i == nrow(wo_arbeiten_district)) {
+      
+      cat(paste0(i, " von ", nrow(wo_arbeiten_district), " Agents haben einen Arbeitsplatz! \n"))
+      
+    }
+    
+  }
+  
+  working_agents <- wo_arbeiten_municipality %>%
+    bind_rows(wo_arbeiten_district) %>% 
+    bind_rows(wo_arbeiten_other) %>%
+    arrange(Id_agent)
+  
+  working_agents <- working_agents %>%
+    select(Id_agent, Id_municipality_work, Id_workplace) %>%
+    rename(Id_municipality_work_new = Id_municipality_work,
+           Id_workplace_new = Id_workplace)
+  
+  daten_agent <- daten_agent %>% 
+    left_join(working_agents, by = "Id_agent") 
+  
+  daten_agent <- daten_agent %>%
+    mutate(Id_municipality_work = if_else(is.na(Id_municipality_work_new), Id_municipality_work, Id_municipality_work_new)) %>%
+    mutate(Id_workplace = if_else(is.na(Id_workplace_new), Id_workplace, Id_workplace_new)) %>%
+    select(- c(Id_workplace_new, Id_municipality_work_new))
+  
+  return(daten_agent)
   
 }
 
