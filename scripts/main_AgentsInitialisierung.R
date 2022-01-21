@@ -93,7 +93,11 @@ agents <- volksschulen_zuweisen(agents, infos_mumicipality, volksschulplaetze, w
 schulplaetze <- schulplaetze_erstellen(infos_mumicipality)
 agents <- schulen_zuweisen(agents, infos_mumicipality, schulplaetze, wsk_between_centre)
 
-agents <- gesundheit_erstellen(agents, 1)
+infos_mumicipality <- kindergartendaten_hinzufuegen(infos_mumicipality)
+kindergartenplaetze <- kindergartenplaetze_erstellen(infos_mumicipality)
+agents <- kindergarten_zuweisen(agents, infos_mumicipality, kindergartenplaetze, wsk_between_centre)
+
+# agents <- gesundheit_erstellen(agents, 1)
 
 #----------------------------------------------------------------
 #----------------------------------------------------------------

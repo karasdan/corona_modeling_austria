@@ -855,8 +855,8 @@ arbeit_zuweisen <- function(daten_agent, daten_info) {
   daten_agent <- daten_agent %>%
     mutate(type_of_work = if_else(alter >= 65, "pension", type_of_work)) %>%
     mutate(type_of_work = if_else(alter > 6 & alter <= 18, "school", type_of_work)) %>%
-    mutate(type_of_work = if_else(alter >= 3 & alter <= 6, "kindergarden", type_of_work)) %>%
-    mutate(type_of_work = if_else(alter < 3, "child", type_of_work))
+    mutate(type_of_work = if_else(alter >= 4 & alter <= 6, "kindergarden", type_of_work)) %>%
+    mutate(type_of_work = if_else(alter < 4, "child", type_of_work))
   
   return(daten_agent)
   
@@ -1355,6 +1355,235 @@ schulen_zuweisen <- function(daten_agent, daten_info, daten_schulplaetze, daten_
   
   daten_agent <- daten_agent %>%
     mutate(Id_municipality_work = if_else(type_of_work == "school" & Id_workplace == 0, 99999, Id_municipality_work))
+  
+  return(daten_agent)
+  
+}
+
+#----------------------------------------------------------------
+# Kindergartendaten hinzufuegen
+kindergartendaten_hinzufuegen <- function(daten_info) {
+  
+  #TESTCODE
+  # daten_info <- infos_mumicipality
+  
+  file_kindergarden <- "kindertagesheime_gruppen_und_kinder_nach_gemeinden_2020.xlsx"
+  
+  setwd("./data/Schulen_und_Kindergarten")
+  
+  kindergarden_raw <- read_excel(file_kindergarden, skip = 3)
+  
+  setwd("..")
+  setwd("..")
+  
+  colnames(kindergarden_raw)[1:2] <- c("iso", "name")
+  
+  kindergarden_raw <- kindergarden_raw %>%
+    filter(! is.na(iso)) %>%
+    filter(! is.na(name)) %>%
+    select(1:6, 15:18)
+  
+  kindergarden_raw <- kindergarden_raw %>%
+    mutate(Kindergarten = rowSums(across(3:6), na.rm = TRUE)) %>%
+    mutate(Kindergarten_Kinder = rowSums(across(7:10), na.rm = TRUE)) %>%
+    select(- c(2:10)) 
+  
+  kindergarden_raw <- kindergarden_raw %>%
+    mutate_all(as.numeric)
+  
+  daten_info <- daten_info %>%
+    left_join(kindergarden_raw, by = c("Id_municipality" = "iso")) %>%
+    mutate(Kindergarten = if_else(is.na(Kindergarten), 0, Kindergarten)) %>%
+    mutate(Kindergarten_Kinder = if_else(is.na(Kindergarten_Kinder), 0, Kindergarten_Kinder))
+  
+  return(daten_info)
+  
+}
+
+#----------------------------------------------------------------
+# Kindergartenplaetze erstellen
+kindergartenplaetze_erstellen <- function(daten_info) {
+  
+  #TESTCODE
+  # daten_info <- infos_mumicipality
+  
+  moegliche_kindergartenplaetze <- data.frame(Id_municipality = c(),
+                                              Id_kindergarten = c())
+  
+  for (id in daten_info$Id_municipality) {
+    
+    temp1 <- daten_info %>%
+      filter(Id_municipality == id) %>%
+      select(Id_municipality, Kindergarten, Kindergarten_Kinder) 
+    
+    if (temp1$Kindergarten != 0) {
+      
+      temp2 <- data.frame(Id_municipality = id,
+                          Id_kindergarten = sample(1:temp1$Kindergarten, temp1$Kindergarten_Kinder, replace = TRUE))
+      
+      moegliche_kindergartenplaetze <- moegliche_kindergartenplaetze %>%
+        bind_rows(temp2)
+      
+    }
+    
+  }
+  
+  moegliche_kindergartenplaetze$Id_kindergartenplatz <- 1:nrow(moegliche_kindergartenplaetze)
+  
+  return(moegliche_kindergartenplaetze)
+  
+}
+
+#----------------------------------------------------------------
+# Kindergarten zuweisen
+kindergarten_zuweisen <- function(daten_agent, daten_info, daten_kindergartenplaetze, daten_wsk) {
+  
+  #TESTCODE
+  # daten_agent <- agents
+  # daten_info <- infos_mumicipality
+  # daten_kindergartenplaetze <- kindergartenplaetze
+  # daten_wsk <- wsk_between_centre
+  
+  dateiname <<- paste0(dateiname, "_kindergarden")
+  
+  daten_agent_kindergarden <- daten_agent %>%
+    filter(alter >= 4 & alter <= 6) %>% 
+    mutate(type_of_work = "kindergarden")
+  
+  for (id in daten_info$Id_municipality) {
+    
+    kinder <- daten_agent_kindergarden %>%
+      filter(Id_municipality == id)
+    
+    moegliche_plaetze <- daten_kindergartenplaetze %>%
+      filter(Id_municipality == id)
+    
+    if (nrow(kinder) <= nrow(moegliche_plaetze)) {
+      
+      temp1 <- moegliche_plaetze %>%
+        sample_n(nrow(kinder))
+      
+      kinder$Id_workplace <- temp1$Id_kindergarten
+      
+    } else {
+      
+      temp1 <- moegliche_plaetze %>%
+        sample_n(nrow(moegliche_plaetze))
+      
+      kinder$Id_workplace <- c(temp1$Id_kindergarten, rep(0, nrow(kinder) - nrow(moegliche_plaetze)))
+      
+    }
+    
+    daten_kindergartenplaetze <- daten_kindergartenplaetze %>%
+      anti_join(temp1, by = "Id_kindergartenplatz")
+    
+    kinder <- kinder %>%
+      select(Id_agent, type_of_work,  Id_workplace) %>%
+      rename(Id_workplace_new = Id_workplace,
+             type_of_work_new = type_of_work)
+    
+    daten_agent <- daten_agent %>%
+      left_join(kinder, by = "Id_agent") %>%
+      mutate(type_of_work = if_else(is.na(type_of_work_new), type_of_work, type_of_work_new),
+             Id_workplace = if_else(is.na(Id_workplace_new), Id_workplace, as.double(Id_workplace_new))) %>%
+      select(- c(type_of_work_new, Id_workplace_new))
+    
+  }
+  
+  daten_agent_kindergarten_district <- daten_agent %>%
+    filter(type_of_work == "kindergarden" & Id_workplace == 0) 
+  
+  anzahl_plaetze <- nrow(daten_kindergartenplaetze)
+  anzahl_kinder <- nrow(daten_agent_kindergarten_district)
+  
+  if (anzahl_kinder <= anzahl_plaetze) {
+    anzahl <- anzahl_kinder
+  } else {
+    anzahl <- anzahl_plaetze
+  }
+  
+  for (j in 1:anzahl) {
+    
+    temp2 <- daten_wsk %>%
+      filter(centre_j %in% unique(daten_kindergartenplaetze$Id_municipality))
+    
+    ein_kind <- daten_agent_kindergarten_district %>%
+      sample_n(1) %>%
+      select(Id_agent, Id_municipality) %>%
+      left_join(temp2, by = c("Id_municipality" = "centre_i")) 
+    
+    ein_kind <- ein_kind %>%
+      left_join(daten_kindergartenplaetze, by = c("centre_j" = "Id_municipality")) %>%
+      sample_n(1, weight = wsk)
+    
+    daten_kindergartenplaetze <- daten_kindergartenplaetze %>%
+      anti_join(ein_kind, by = "Id_kindergartenplatz")
+    
+    daten_agent_kindergarten_district <- daten_agent_kindergarten_district %>%
+      anti_join(ein_kind, by = "Id_agent")
+    
+    ein_kind <- ein_kind %>%
+      select(Id_agent, Id_kindergarten, centre_j) %>%
+      rename(Id_workplace_new = Id_kindergarten,
+             Id_municipality_new = centre_j)
+    
+    daten_agent <- daten_agent %>%
+      left_join(ein_kind, by = "Id_agent") %>%
+      mutate(Id_workplace = if_else(is.na(Id_workplace_new), Id_workplace, as.double(Id_workplace_new)),
+             Id_municipality_work = if_else(is.na(Id_municipality_new), Id_municipality_work, as.double(Id_municipality_new))) %>%
+      select(- c(Id_municipality_new, Id_workplace_new))
+    
+    if ((j %% 100) == 0 | j == anzahl) {
+      
+      cat(paste0(j, " von ", anzahl, " Agents haben einen freien Kindergartenplatz! \n"))
+      
+    }
+  }
+  
+  daten_agent_kindergarden_jung <- daten_agent %>%
+    filter(alter %in% c(2,3))
+  
+  anzahl <- nrow(daten_kindergartenplaetze)
+  
+  for (j in 1:anzahl) {
+    
+    temp2 <- daten_wsk %>%
+      filter(centre_j %in% unique(daten_kindergartenplaetze$Id_municipality))
+    
+    ein_kind <- daten_agent_kindergarden_jung %>%
+      sample_n(1) %>%
+      select(Id_agent, Id_municipality) %>%
+      left_join(temp2, by = c("Id_municipality" = "centre_i")) 
+    
+    ein_kind <- ein_kind %>%
+      left_join(daten_kindergartenplaetze, by = c("centre_j" = "Id_municipality")) %>%
+      sample_n(1, weight = wsk)
+    
+    daten_kindergartenplaetze <- daten_kindergartenplaetze %>%
+      anti_join(ein_kind, by = "Id_kindergartenplatz")
+    
+    daten_agent_kindergarden_jung <- daten_agent_kindergarden_jung %>%
+      anti_join(ein_kind, by = "Id_agent")
+    
+    ein_kind <- ein_kind %>%
+      select(Id_agent, Id_kindergarten, centre_j) %>%
+      rename(Id_workplace_new = Id_kindergarten,
+             Id_municipality_new = centre_j) %>%
+      mutate(type_of_work_new = "kindergarden")
+    
+    daten_agent <- daten_agent %>%
+      left_join(ein_kind, by = "Id_agent") %>%
+      mutate(Id_workplace = if_else(is.na(Id_workplace_new), Id_workplace, as.double(Id_workplace_new)),
+             Id_municipality_work = if_else(is.na(Id_municipality_new), Id_municipality_work, as.double(Id_municipality_new)),
+             type_of_work = if_else(is.na(type_of_work_new), type_of_work, type_of_work_new)) %>%
+      select(- c(Id_municipality_new, Id_workplace_new, type_of_work_new))
+    
+    if ((j %% 100) == 0 | j == anzahl) {
+      
+      cat(paste0(j, " von ", anzahl, " Agents haben einen freien Kindergartenplatz! \n"))
+      
+    }
+  }
   
   return(daten_agent)
   

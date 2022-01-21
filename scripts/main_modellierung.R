@@ -12,7 +12,7 @@ district <- "Melk"
 # file_agents <- "districtRust(Stadt)_Burgenland_household_4infected_2021_12_19.RData"
 
 switch(district,
-       "Melk" = {file_agents <- "districtMelk_Niederösterreich_household_workplace_School_1infected_2022_01_09.RData"
+       "Melk" = {file_agents <- "districtMelk_Niederösterreich_household_workplace_School_kindergarden_2022_01_19.RData"
                 file_wsk <- "districtMelk_0.05.RData"},
        "Gmünd" = {file_agents <- "districtGmünd_Niederösterreich_household_workplace_primarySchool_1infected_2022_01_09.RData"
                   file_wsk <- "districtGmünd_0.05.RData"})
@@ -34,15 +34,204 @@ setwd("./scripts")
 source("function_modellierung.R")
 setwd("..")
 
-tage <- 10
+# Gesundheitsstatus der Agents waehlen
+agents <- gesundheit_erstellen(agents, 100)
+
+tage <- 5
+times <- 10
 
 # Erstelle Goverment
 goverment <- data.frame(Tag = 1:tage,
-                        Lockdown = rep(FALSE, tage))
+                        Lockdown = c(rep(FALSE,tage)))
+
+detection_wsk_per_agent <- test_detection_wsk(agents_f = agents)
 
 # Lockdown von Tag 25 - 35
 # goverment <- goverment %>%
 #   mutate(Lockdown = if_else((Tag > 25 & Tag <= 50), TRUE, FALSE))
+
+# Kontaktzusammensetzung Modell 5
+type_of_contactfunctions <- c("freizeit",  
+                              "haushalt", 
+                              "arbeitsplatz", 
+                              "volksschule", 
+                              "schule", 
+                              "kindergarten")
+
+# test <- corona_model_agent_based(agents_f = agents,
+#                                  tage_f = tage,
+#                                  type_of_contactfunctions_f = type_of_contactfunctions,
+#                                  daten_wsk_f = daten_wsk,
+#                                  goverment_f = goverment,
+#                                  plotting = TRUE)
+
+test2 <- corona_model_agent_based_2(agents_f = agents,
+                                   tage_f = tage,
+                                   type_of_contactfunctions_f = type_of_contactfunctions,
+                                   daten_wsk_f = daten_wsk,
+                                   goverment_f = goverment,
+                                   plotting = TRUE)
+
+ggplot(test2) +
+  aes(x = Tag) +
+  geom_line(aes(y = S), color = "green") +
+  geom_line(aes(y = I + I_), color = "red") +
+  geom_line(aes(y = R), color = "black")
+
+ggplot(test2) +
+  aes(x = Tag) +
+  geom_line(aes(y = S), color = "green") +
+  geom_line(aes(y = I), color = "red") +
+  geom_line(aes(y = I_), color = "pink") +
+  geom_line(aes(y = R), color = "black")
+
+model_5 <- monte_carlo_simulation(agents_ff = agents,
+                                  tage_ff = tage,
+                                  type_of_contactfunctions_ff = type_of_contactfunctions,
+                                  daten_wsk_ff = daten_wsk,
+                                  goverment_ff = goverment,
+                                  times_f = times)
+
+Infektionen_model_5 <- model_5$I
+Infektionen_new_model_5 <- model_5$Neuinfektion
+
+type_of_contactfunctions <- c("freizeit",  
+                              "haushalt", 
+                              "arbeitsplatz", 
+                              "volksschule", 
+                              "schule") 
+                              #"kindergarten")
+
+model_4 <- monte_carlo_simulation(agents_ff = agents,
+                                  tage_ff = tage,
+                                  type_of_contactfunctions_ff = type_of_contactfunctions,
+                                  daten_wsk_ff = daten_wsk,
+                                  goverment_ff = goverment,
+                                  times_f = times)
+
+Infektionen_model_4 <- model_4$I
+Infektionen_new_model_4 <- model_4$Neuinfektion
+
+type_of_contactfunctions <- c("freizeit",  
+                              "haushalt", 
+                              "arbeitsplatz")
+                              #"volksschule", 
+                              #"schule", 
+                              #"kindergarten")
+
+model_3 <- monte_carlo_simulation(agents_ff = agents,
+                                  tage_ff = tage,
+                                  type_of_contactfunctions_ff = type_of_contactfunctions,
+                                  daten_wsk_ff = daten_wsk,
+                                  goverment_ff = goverment,
+                                  times_f = times)
+
+Infektionen_model_3 <- model_3$I
+Infektionen_new_model_3 <- model_3$Neuinfektion
+
+type_of_contactfunctions <- c("freizeit",  
+                              "haushalt")
+
+model_2 <- monte_carlo_simulation(agents_ff = agents,
+                                  tage_ff = tage,
+                                  type_of_contactfunctions_ff = type_of_contactfunctions,
+                                  daten_wsk_ff = daten_wsk,
+                                  goverment_ff = goverment,
+                                  times_f = times)
+
+Infektionen_model_2 <- model_2$I
+Infektionen_new_model_2 <- model_2$Neuinfektion
+
+type_of_contactfunctions <- c("freizeit")
+
+model_1 <- monte_carlo_simulation(agents_ff = agents,
+                                  tage_ff = tage,
+                                  type_of_contactfunctions_ff = type_of_contactfunctions,
+                                  daten_wsk_ff = daten_wsk,
+                                  goverment_ff = goverment,
+                                  times_f = times)
+
+Infektionen_model_1 <- model_1$I
+Infektionen_new_model_1 <- model_1$Neuinfektion
+
+vergleich_infizierte <- tibble(Tage = numeric(),
+                               Model = character(),
+                               durchschnitt = numeric()) 
+
+vergleich_infizierte <- vergleich_infizierte %>%
+  bind_rows(tibble(Tage = 0:tage, Model = "Modell 1", durchschnitt = Infektionen_model_1$durchschnitt))
+
+vergleich_infizierte <- vergleich_infizierte %>%
+  bind_rows(tibble(Tage = 0:tage, Model = "Modell 2", durchschnitt = Infektionen_model_2$durchschnitt))
+
+vergleich_infizierte <- vergleich_infizierte %>%
+  bind_rows(tibble(Tage = 0:tage, Model = "Modell 3", durchschnitt = Infektionen_model_3$durchschnitt))
+
+vergleich_infizierte <- vergleich_infizierte %>%
+  bind_rows(tibble(Tage = 0:tage, Model = "Modell 4", durchschnitt = Infektionen_model_4$durchschnitt))
+
+vergleich_infizierte <- vergleich_infizierte %>%
+  bind_rows(tibble(Tage = 0:tage, Model = "Modell 5", durchschnitt = Infektionen_model_5$durchschnitt))
+
+ggplot(vergleich_infizierte) +
+  aes(x = Tage, y = durchschnitt, color = Model) +
+  geom_line() 
+
+# Untersuchen ob wir mit 10 Iteration genug haben
+test_monte_carlo <- tibble(Iterationen = numeric(),
+                           Tage = numeric(),
+                           Durchschnitt = numeric())
+
+for (i in seq(5, 20, 5)) {
+  
+  type_of_contactfunctions <- c("freizeit",  
+                                "haushalt", 
+                                "arbeitsplatz", 
+                                "volksschule", 
+                                "schule", 
+                                "kindergarten")
+  
+  temp1 <- monte_carlo_simulation(agents_ff = agents,
+                                    tage_ff = tage,
+                                    type_of_contactfunctions_ff = type_of_contactfunctions,
+                                    daten_wsk_ff = daten_wsk,
+                                    goverment_ff = goverment,
+                                    times_f = i)
+  
+  temp2 <- tibble(Iterationen = rep(i, tage + 1),
+                  Tage = 0:tage,
+                  Durchschnitt = temp1$I$durchschnitt)
+  
+  test_monte_carlo <- test_monte_carlo %>%
+    bind_rows(temp2)
+  
+  print(temp2)
+  print(paste0("Iterationen:", i))
+  
+}
+
+test_monte_carlo$Iterationen <- as.character(test_monte_carlo$Iterationen)
+
+ggplot(test_monte_carlo) +
+  aes(x = Tage, y = Durchschnitt, color = Iterationen) +
+  geom_line() 
+
+# TESTCODE
+
+test_agents <- gesundheit_erstellen(agents, 100)
+
+# Zeitstempel fuer Infektion hinterlegen
+zeiten <- tibble(Id_agent = test_agents$Id_agent)
+zeiten <- zeit_erstellen_infiziert_infektioes(test_agents, zeiten)
+
+
+
+# CONFIDENCEINTERVALL BERECHNEN BEI ITERATIONEN
+# Calculate the mean and standard error
+test2 <- lm(mpg ~ 1, )
+
+# Calculate the confidence interval
+confint(l.model, level=0.95)
 
 #----------------------------------------------------------------
 #----------------------------------------------------------------
@@ -409,11 +598,12 @@ ggplot(tracker_cases_1) +
 # Fuenftes Modell Kontakt wie viertes plus Infektioese Zeit aendern!
 
 # Zeitstempel fuer Infektion hinterlegen
-zeiten <- data.frame(Id_agent = agents$Id_agent)
-zeiten <- zeit_erstellen_infiziert_infektioes(agents, zeiten)
+agents_basic_model <- zeitstempel_hinterlegen(agents, "infected")
 
 
-tracker_cases_1 <- data.frame(Tag = 0,
+
+
+tracker_cases_5 <- data.frame(Tag = 0,
                               S = sum(agents_basic_model$susceptible),
                               I = sum(agents_basic_model$infected),
                               R = sum(agents_basic_model$removed),
@@ -432,11 +622,15 @@ for (day in 1:tage) {
                          type_of_contact = c(), 
                          Id_contact = c())
   
-  # contacts <- kontakte_erstellen_haushalt(agents_basic_model, contacts)
   contacts <- kontakte_erstellen_freizeit(agents_basic_model, 
                                           contacts, 
                                           daten_wsk,
                                           goverment_day)
+  contacts <- kontakte_erstellen_haushalt(agents_basic_model, contacts)
+  contacts <- kontakte_erstellen_arbeitsplatz(agents_basic_model, contacts)
+  contacts <- kontakte_erstellen_volksschule(agents_basic_model, contacts)
+  contacts <- kontakte_erstellen_schule(agents_basic_model, contacts)
+  contacts <- kontakte_erstellen_kindergarten(agents_basic_model, contacts)
   # contacts <- kontakte_erstellen_neu(agents_basic_model, household = TRUE, wsk = daten_wsk)
   
   agents_basic_model <- infected_status_aendern_neu(agents_basic_model, contacts)
@@ -459,7 +653,7 @@ for (day in 1:tage) {
                      R = sum(agents_basic_model$removed),
                      Neuinfektionen = neuinfektionen)
   
-  tracker_cases_1 <- tracker_cases_1 %>%
+  tracker_cases_5 <- tracker_cases_5 %>%
     bind_rows(temp)
   
   time_end <- Sys.time()
@@ -481,7 +675,7 @@ sum(tracker_time$time)
 # 
 # sum(test$Neuinfektionen) / length(agents_basic_model$Id_agent) * 100000
 
-ggplot(tracker_cases_1) +
+ggplot(tracker_cases_5) +
   aes(x = Tag) +
   geom_line(aes(y = S), color = "green") +
   geom_line(aes(y = I), color = "red") +
@@ -489,13 +683,49 @@ ggplot(tracker_cases_1) +
   #geom_line(aes(y = Neuinfektionen)) +
   ylim(0, length(agents$Id_agent))
 
+ggplot(tracker_cases_1) +
+  aes(x = Tag) +
+  geom_line(aes(y = I), color = "green") +
+  geom_line(aes(y = tracker_cases_2$I), color = "red") +
+  geom_line(aes(y = tracker_cases_3$I), color = "blue") +
+  geom_line(aes(y = tracker_cases_4$I), color = "grey") +
+  geom_line(aes(y = tracker_cases_5$I), color = "pink")
+
 #----------------------------------------------------------------
 #----------------------------------------------------------------
 #----------------------------Testcode----------------------------
 
-#Testcode fuer Kontakte am Volksschule
+#Testcode fuer Agentswskmatrix
 
+test <- agents %>%
+  slice(1:9000) %>%
+  # filter(Id_municipality == 31502) %>%
+  select(Id_agent, Id_municipality)
 
+test_kontakte <- data.frame(Id_agent = test$Id_agent, 
+                       contacts = round(rgamma(length(test$Id_agent),6.11,1)))
+
+test_agents <- agents %>%
+  select(Id_agent, Id_municipality) %>%
+  rename(Id_test = Id_municipality,
+         Id_contact = Id_agent)
+
+test2 <- test %>%
+  left_join(daten_wsk, by = c("Id_municipality" = "centre_i")) %>%
+  left_join(test_agents, by = c("centre_j" = "Id_test"))
+
+microbenchmark({
+test3 <- test2 %>%
+  left_join(test_kontakte, by = "Id_agent") %>%
+  group_by(Id_agent) %>%
+  sample_n(unique(contacts), replace = TRUE, weight = wsk)
+}, times = 1L)
+
+test3 <- test2 %>%
+  select(- c(wsk, contacts)) %>%
+  left_join(test_agents, by = c("centre_j" = "Id_test"))
+
+mat <- matrix(test, nrow(agents), nrow(agents))
 
 
 
