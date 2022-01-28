@@ -37,7 +37,7 @@ setwd("..")
 # Gesundheitsstatus der Agents waehlen
 agents <- gesundheit_erstellen(agents, 100)
 
-tage <- 5
+tage <- 60
 times <- 10
 
 # Erstelle Goverment
@@ -65,35 +65,55 @@ type_of_contactfunctions <- c("freizeit",
 #                                  goverment_f = goverment,
 #                                  plotting = TRUE)
 
-test2 <- corona_model_agent_based_2(agents_f = agents,
-                                   tage_f = tage,
-                                   type_of_contactfunctions_f = type_of_contactfunctions,
-                                   daten_wsk_f = daten_wsk,
-                                   goverment_f = goverment,
-                                   plotting = TRUE)
+# test2 <- corona_model_agent_based_with_quarantine(agents_f = agents,
+#                                                   tage_f = tage,
+#                                                   type_of_contactfunctions_f = type_of_contactfunctions,
+#                                                   daten_wsk_f = daten_wsk,
+#                                                   goverment_f = goverment,
+#                                                   detection_wsk_per_agent_f = detection_wsk_per_agent,
+#                                                   plotting = TRUE)
 
-ggplot(test2) +
-  aes(x = Tag) +
-  geom_line(aes(y = S), color = "green") +
-  geom_line(aes(y = I + I_), color = "red") +
-  geom_line(aes(y = R), color = "black")
+# agents for without quarantine
+agents_without_quarantine <- agents %>%
+  mutate(infected = if_else(infectious == TRUE, TRUE, infected))
 
-ggplot(test2) +
-  aes(x = Tag) +
-  geom_line(aes(y = S), color = "green") +
-  geom_line(aes(y = I), color = "red") +
-  geom_line(aes(y = I_), color = "pink") +
-  geom_line(aes(y = R), color = "black")
-
-model_5 <- monte_carlo_simulation(agents_ff = agents,
+# MonteCarlo ohne Quarantaene
+model_5 <- monte_carlo_simulation(agents_ff = agents_without_quarantine,
                                   tage_ff = tage,
                                   type_of_contactfunctions_ff = type_of_contactfunctions,
                                   daten_wsk_ff = daten_wsk,
                                   goverment_ff = goverment,
-                                  times_f = times)
+                                  times_f = times,
+                                  detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                                  quarantine = FALSE)
 
 Infektionen_model_5 <- model_5$I
 Infektionen_new_model_5 <- model_5$Neuinfektion
+
+# agents for with quarantine
+agents_with_quarantine <- agents 
+
+test <- corona_model_agent_based_with_quarantine(agents_f = agents_with_quarantine,
+                                         tage_f = tage,
+                                         type_of_contactfunctions_f = type_of_contactfunctions,
+                                         daten_wsk_f = daten_wsk,
+                                         goverment_f = goverment,
+                                         detection_wsk_per_agent_f = detection_wsk_per_agent,
+                                         plotting = TRUE)
+
+# MonteCarlo ohne Quarantaene
+model_5 <- monte_carlo_simulation(agents_ff = agents_with_quarantine,
+                                  tage_ff = tage,
+                                  type_of_contactfunctions_ff = type_of_contactfunctions,
+                                  daten_wsk_ff = daten_wsk,
+                                  goverment_ff = goverment,
+                                  times_f = times,
+                                  detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                                  quarantine = TRUE)
+
+Infektionen_model_5_qu <- model_5$I
+Infektionen_new_model_5_qu <- model_5$Neuinfektion
+
 
 type_of_contactfunctions <- c("freizeit",  
                               "haushalt", 
@@ -102,12 +122,14 @@ type_of_contactfunctions <- c("freizeit",
                               "schule") 
                               #"kindergarten")
 
-model_4 <- monte_carlo_simulation(agents_ff = agents,
+model_4 <- monte_carlo_simulation(agents_ff = agents_without_quarantine,
                                   tage_ff = tage,
                                   type_of_contactfunctions_ff = type_of_contactfunctions,
                                   daten_wsk_ff = daten_wsk,
                                   goverment_ff = goverment,
-                                  times_f = times)
+                                  times_f = times,
+                                  detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                                  quarantine = FALSE)
 
 Infektionen_model_4 <- model_4$I
 Infektionen_new_model_4 <- model_4$Neuinfektion
@@ -119,12 +141,14 @@ type_of_contactfunctions <- c("freizeit",
                               #"schule", 
                               #"kindergarten")
 
-model_3 <- monte_carlo_simulation(agents_ff = agents,
+model_3 <- monte_carlo_simulation(agents_ff = agents_without_quarantine,
                                   tage_ff = tage,
                                   type_of_contactfunctions_ff = type_of_contactfunctions,
                                   daten_wsk_ff = daten_wsk,
                                   goverment_ff = goverment,
-                                  times_f = times)
+                                  times_f = times,
+                                  detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                                  quarantine = FALSE)
 
 Infektionen_model_3 <- model_3$I
 Infektionen_new_model_3 <- model_3$Neuinfektion
@@ -132,24 +156,28 @@ Infektionen_new_model_3 <- model_3$Neuinfektion
 type_of_contactfunctions <- c("freizeit",  
                               "haushalt")
 
-model_2 <- monte_carlo_simulation(agents_ff = agents,
+model_2 <- monte_carlo_simulation(agents_ff = agents_without_quarantine,
                                   tage_ff = tage,
                                   type_of_contactfunctions_ff = type_of_contactfunctions,
                                   daten_wsk_ff = daten_wsk,
                                   goverment_ff = goverment,
-                                  times_f = times)
+                                  times_f = times,
+                                  detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                                  quarantine = FALSE)
 
 Infektionen_model_2 <- model_2$I
 Infektionen_new_model_2 <- model_2$Neuinfektion
 
 type_of_contactfunctions <- c("freizeit")
 
-model_1 <- monte_carlo_simulation(agents_ff = agents,
+model_1 <- monte_carlo_simulation(agents_ff = agents_without_quarantine,
                                   tage_ff = tage,
                                   type_of_contactfunctions_ff = type_of_contactfunctions,
                                   daten_wsk_ff = daten_wsk,
                                   goverment_ff = goverment,
-                                  times_f = times)
+                                  times_f = times,
+                                  detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                                  quarantine = FALSE)
 
 Infektionen_model_1 <- model_1$I
 Infektionen_new_model_1 <- model_1$Neuinfektion
@@ -191,12 +219,14 @@ for (i in seq(5, 20, 5)) {
                                 "schule", 
                                 "kindergarten")
   
-  temp1 <- monte_carlo_simulation(agents_ff = agents,
+  temp1 <- monte_carlo_simulation(agents_ff = agents_without_quarantine,
                                     tage_ff = tage,
                                     type_of_contactfunctions_ff = type_of_contactfunctions,
                                     daten_wsk_ff = daten_wsk,
                                     goverment_ff = goverment,
-                                    times_f = i)
+                                    times_f = i,
+                                    detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                                    quarantine = FALSE)
   
   temp2 <- tibble(Iterationen = rep(i, tage + 1),
                   Tage = 0:tage,
@@ -216,15 +246,54 @@ ggplot(test_monte_carlo) +
   aes(x = Tage, y = Durchschnitt, color = Iterationen) +
   geom_line() 
 
+# Untersuchen ob wir mit 10 Iteration genug haben
+test_monte_carlo_2 <- tibble(Iterationen = numeric(),
+                            Tage = numeric(),
+                            Durchschnitt_I = numeric(),
+                            Durchschnitt_Q = numeric())
+
+for (i in seq(5, 20, 5)) {
+  
+  type_of_contactfunctions <- c("freizeit",  
+                                "haushalt", 
+                                "arbeitsplatz", 
+                                "volksschule", 
+                                "schule", 
+                                "kindergarten")
+  
+  temp1 <- monte_carlo_simulation(agents_ff = agents_with_quarantine,
+                                  tage_ff = tage,
+                                  type_of_contactfunctions_ff = type_of_contactfunctions,
+                                  daten_wsk_ff = daten_wsk,
+                                  goverment_ff = goverment,
+                                  times_f = i,
+                                  detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                                  quarantine = TRUE)
+  
+  temp2 <- tibble(Iterationen = rep(i, tage + 1),
+                  Tage = 0:tage,
+                  Durchschnitt_I = temp1$I$durchschnitt,
+                  Durchschnitt_Q = temp1$Q$durchschnitt)
+  
+  test_monte_carlo_2 <- test_monte_carlo_2 %>%
+    bind_rows(temp2)
+  
+  print(temp2)
+  print(paste0("Iterationen:", i))
+  
+}
+
+test_monte_carlo_2$Iterationen <- as.character(test_monte_carlo_2$Iterationen)
+
+ggplot(test_monte_carlo_2) +
+  aes(x = Tage, y = Durchschnitt_I, color = Iterationen) +
+  geom_line() 
+
+ggplot(test_monte_carlo_2) +
+  aes(x = Tage, y = Durchschnitt_Q, color = Iterationen) +
+  geom_line() 
+
 # TESTCODE
-
-test_agents <- gesundheit_erstellen(agents, 100)
-
-# Zeitstempel fuer Infektion hinterlegen
-zeiten <- tibble(Id_agent = test_agents$Id_agent)
-zeiten <- zeit_erstellen_infiziert_infektioes(test_agents, zeiten)
-
-
 
 # CONFIDENCEINTERVALL BERECHNEN BEI ITERATIONEN
 # Calculate the mean and standard error
@@ -267,7 +336,7 @@ for (day in 1:tage) {
                                           goverment_day)
   # contacts <- kontakte_erstellen_neu(agents_basic_model, household = TRUE, wsk = daten_wsk)
 
-  agents_basic_model <- infected_status_aendern_neu(agents_basic_model, contacts)
+  agents_basic_model <- infected_status_aendern_ohne_quarantine(agents_basic_model, contacts)
   
   neuinfektionen <- agents_basic_model %>%
     filter(infected == TRUE & time_infected == 0) %>%
@@ -357,7 +426,7 @@ for (day in 1:tage) {
                                           goverment_day)
   # contacts <- kontakte_erstellen_neu(agents_basic_model, household = TRUE, wsk = daten_wsk)
   
-  agents_basic_model <- infected_status_aendern_neu(agents_basic_model, contacts)
+  agents_basic_model <- infected_status_aendern_ohne_quarantine(agents_basic_model, contacts)
 
   neuinfektionen <- agents_basic_model %>%
     filter(infected == TRUE & time_infected == 0) %>%
@@ -442,7 +511,7 @@ for (day in 1:tage) {
   contacts <- kontakte_erstellen_arbeitsplatz(agents_basic_model, contacts)
   # contacts <- kontakte_erstellen_neu(agents_basic_model, household = TRUE, wsk = daten_wsk)
   
-  agents_basic_model <- infected_status_aendern_neu(agents_basic_model, contacts)
+  agents_basic_model <- infected_status_aendern_ohne_quarantine(agents_basic_model, contacts)
   
   neuinfektionen <- agents_basic_model %>%
     filter(infected == TRUE & time_infected == 0) %>%
@@ -535,7 +604,7 @@ for (day in 1:tage) {
   contacts <- kontakte_erstellen_schule(agents_basic_model, contacts)
   # contacts <- kontakte_erstellen_neu(agents_basic_model, household = TRUE, wsk = daten_wsk)
   
-  agents_basic_model <- infected_status_aendern_neu(agents_basic_model, contacts)
+  agents_basic_model <- infected_status_aendern_ohne_quarantine(agents_basic_model, contacts)
   
   neuinfektionen <- agents_basic_model %>%
     filter(infected == TRUE & time_infected == 0) %>%
@@ -633,7 +702,7 @@ for (day in 1:tage) {
   contacts <- kontakte_erstellen_kindergarten(agents_basic_model, contacts)
   # contacts <- kontakte_erstellen_neu(agents_basic_model, household = TRUE, wsk = daten_wsk)
   
-  agents_basic_model <- infected_status_aendern_neu(agents_basic_model, contacts)
+  agents_basic_model <- infected_status_aendern_ohne_quarantine(agents_basic_model, contacts)
   
   neuinfektionen <- agents_basic_model %>%
     filter(infected == TRUE & time_infected == 0) %>%

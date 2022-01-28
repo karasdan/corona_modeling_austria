@@ -1,11 +1,12 @@
 
-#----------------------------------------------------------------
+#-------------------------Vorbereitung---------------------------
 # Detection probability
 test_detection_wsk <- function(agents_f) {
   
   #TESTCODE
   # agents_f <- agents
   
+  # Altersklassen bilden
   temp <- agents_f %>%
     select(Id_agent, alter) %>%
     mutate(altersklasse = if_else(alter <= 10, 1,
@@ -17,10 +18,11 @@ test_detection_wsk <- function(agents_f) {
                                                                           if_else(alter > 60 & alter <= 70, 7, 
                                                                                   if_else(alter > 70 & alter <= 80, 8, 
                                                                                           if_else(alter > 80 & alter <= 90, 9, 10))))))))))
-  # Percentage kommt von Niki Popper
+  # Percentage kommt von Niki Popper -> pro altersklasse Prozent
   percentage_test <- tibble(altersklasse = 1:10,
                             wsk = c(3.0, 9.0, 22.0, 20.0, 24.0, 28.0, 20.0, 21.0, 33.0, 58.0))
   
+  # Zusammenfuegen
   temp <- temp %>%
     left_join(percentage_test, by = "altersklasse") %>%
     select(Id_agent, wsk)
@@ -29,13 +31,51 @@ test_detection_wsk <- function(agents_f) {
   
 }
 
+# Startwerte bezueglich Infektion waehlen!
+gesundheit_erstellen <- function(daten_agent, infectious) {
+  
+  #TESTCODE
+  # daten_agent <- agents
+  # infectious <- 100
+  
+  # Unterscheide zwischen 0 und mehr infektioese
+  if (infectious == 0) {
+    
+    # Setze alles auf False bis die susceptible
+    daten_agent <- daten_agent %>%
+      mutate(susceptible = TRUE,
+             infected = FALSE,
+             infectious = FALSE,
+             tested = FALSE,
+             quarantine = FALSE,
+             removed = FALSE)
+    
+  } else {
+    
+    # dasselbe wie vorher
+    daten_agent <- daten_agent %>%
+      mutate(susceptible = TRUE,
+             infected = FALSE,
+             infectious = FALSE,
+             tested = FALSE,
+             quarantine = FALSE,
+             removed = FALSE)
+    
+    # waehle bestimmte Indices, die infektioese werden aus
+    indices_infectious <- sample(1:length(daten_agent$Id_agent), infectious)
+    
+    # Setze sie auf infectious = TRUE und susceptible = FALSE
+    daten_agent$infectious[indices_infectious] <- TRUE
+    daten_agent$susceptible[indices_infectious] <- FALSE
+    
+  }
+  
+  return(daten_agent)
+  
+}
 
-
-
-#----------------------------------------------------------------
-#----------------------------------------------------------------
 #------------------------Model Functions-------------------------
-# Zeitstempel fuer State hinterlegen
+# Zeitstempel fuer State hinterlegen -> nur ohne Quaratäne
 zeitstempel_hinterlegen <- function(daten_agent, state) {
   
   #TESTCODE
@@ -56,8 +96,7 @@ zeitstempel_hinterlegen <- function(daten_agent, state) {
   return(daten_agent)
 }
 
-#----------------------------------------------------------------
-# Zeitstempel fuer State hinterlegen
+# Zeitstempel fuer State hinterlegen; Model mit Quarantäne
 zeit_erstellen_infiziert_infektioes <- function(daten_agent, daten_zeit) {
   
   #TESTCODE
@@ -66,26 +105,38 @@ zeit_erstellen_infiziert_infektioes <- function(daten_agent, daten_zeit) {
   
   # Zeitname -> entweder infected, quarantined, ...
   states <- c("time_infected", 
-              "time_infectious", 
+              "time_infectious",
+              "time_quarantine",
               "expected_incubation", 
               "expected_latency", 
-              "expected_unconfirmed_recovery")
+              "expected_unconfirmed_recovery",
+              "expected_reaction_time",
+              "expected_quarantine")
   
+  # Setze alle Zeiten auf 0
   daten_zeit[states] <- 0
   
-  # Falls schon infiziert auf 1 setzen (ob sinnvoll?) -> vielleicht weglassen
+  # Infektioese Agents filtern
   temp1 <- daten_agent %>%
     filter(infectious == TRUE)
   
+  # Zeiten fuer Inkubation, Latenz, Genesung, Reaktion und Quarantaene schon im vorhinein berechnen
+  # Verteilungen kommen von Niki Poper Paper
   incubation <- round((rbeta(nrow(daten_zeit), 3.1, 8.9)*(14 - 2) + 2))
   latency <- incubation - 2
   unconfirmed_recovery <- round(triangle::rtriangle(nrow(daten_zeit), 1, 7, 5))
+  reaction_time <- round(rweibull(nrow(daten_zeit), 4.29,1.65))
+  quarantine <- round(triangle::rtriangle(nrow(daten_zeit), 11, 16, 14))
   
+  # Die erwarteten Zeiten hinzufuegen
   daten_zeit <- daten_zeit %>%
     mutate(expected_incubation = incubation,
            expected_latency = latency,
-           expected_unconfirmed_recovery = unconfirmed_recovery)
+           expected_unconfirmed_recovery = unconfirmed_recovery,
+           expected_reaction_time = reaction_time,
+           expected_quarantine = quarantine)
   
+  # Schon infektioese auf 1 setzen
   daten_zeit <- daten_zeit %>%
     mutate(time_infected = if_else(Id_agent %in% temp1$Id_agent, expected_latency, time_infected),
            time_infectious = if_else(Id_agent %in% temp1$Id_agent, 1, time_infectious))
@@ -93,48 +144,6 @@ zeit_erstellen_infiziert_infektioes <- function(daten_agent, daten_zeit) {
   return(daten_zeit)
 }
 
-#----------------------------------------------------------------
-# Startwerte bezueglich Infektion waehlen!
-gesundheit_erstellen <- function(daten_agent, infiziert) {
-  
-  #TESTCODE
-  # daten_agent <- agents
-  # infiziert <- 100
-  
-  if (infiziert == 0) {
-    
-    daten_agent <- daten_agent %>%
-      mutate(susceptible = TRUE,
-             infected = FALSE,
-             infectious = FALSE,
-             quarantine = FALSE,
-             removed = FALSE)
-    
-  } else {
-    
-    daten_agent <- daten_agent %>%
-      mutate(susceptible = TRUE,
-             infected = FALSE,
-             infectious = FALSE,
-             quarantine = FALSE,
-             removed = FALSE)
-    
-    indices_infiziert <- sample(1:length(daten_agent$Id_agent), infiziert)
-    
-    daten_agent$infectious[indices_infiziert] <- TRUE
-    # daten_agent$infected[indices_infiziert] <- TRUE
-    daten_agent$susceptible[indices_infiziert] <- FALSE
-    
-  }
-  
-  # daten_agent <- daten_agent %>%
-  #   order(Id_agent)
-  
-  return(daten_agent)
-  
-}
-
-#----------------------------------------------------------------
 # Haushaltskontakte ersellen
 kontakte_erstellen_haushalt <- function(daten_agent, daten_kontakte) {
   
@@ -170,7 +179,6 @@ kontakte_erstellen_haushalt <- function(daten_agent, daten_kontakte) {
   
 }
 
-#----------------------------------------------------------------
 # Freizeitkontakte erstellen
 kontakte_erstellen_freizeit <- function(daten_agent, 
                                         daten_kontakte, 
@@ -247,7 +255,6 @@ kontakte_erstellen_freizeit <- function(daten_agent,
   
 }
 
-#----------------------------------------------------------------
 # Arbeitsplatzkontakte erstellen
 kontakte_erstellen_arbeitsplatz <- function(daten_agent, daten_kontakte) {
   
@@ -304,7 +311,6 @@ kontakte_erstellen_arbeitsplatz <- function(daten_agent, daten_kontakte) {
   
 }
 
-#----------------------------------------------------------------
 # Kontakte fuer Volksschule erstellen 
 kontakte_erstellen_volksschule <- function(daten_agent, daten_kontakte) {
   
@@ -361,7 +367,6 @@ kontakte_erstellen_volksschule <- function(daten_agent, daten_kontakte) {
   
 }
 
-#----------------------------------------------------------------
 # Kontakte fuer restliche Schule erstellen 
 kontakte_erstellen_schule <- function(daten_agent, daten_kontakte) {
   
@@ -418,7 +423,6 @@ kontakte_erstellen_schule <- function(daten_agent, daten_kontakte) {
   
 }
 
-#----------------------------------------------------------------
 # Kontakte fuer Kindergarten erstellen 
 kontakte_erstellen_kindergarten <- function(daten_agent, daten_kontakte) {
   
@@ -475,9 +479,8 @@ kontakte_erstellen_kindergarten <- function(daten_agent, daten_kontakte) {
   
 }
 
-#----------------------------------------------------------------
 # Infektionsstatus aendern
-infected_status_aendern_neu <- function(daten_agent, daten_kontakte) {
+infected_status_aendern_ohne_quarantine <- function(daten_agent, daten_kontakte) {
   
   #TESTCODE
   # daten_agent <- agents_basic_model
@@ -552,9 +555,8 @@ infected_status_aendern_neu <- function(daten_agent, daten_kontakte) {
   
 }
 
-#----------------------------------------------------------------
 # Infektionsstatus aendern
-infected_status_aendern_neu_2 <- function(daten_agent, daten_kontakte) {
+infected_status_aendern_mit_quarantine <- function(daten_agent, daten_kontakte) {
   
   #TESTCODE
   # daten_agent <- agents_f
@@ -631,58 +633,122 @@ infected_status_aendern_neu_2 <- function(daten_agent, daten_kontakte) {
   
 }
 
-#----------------------------------------------------------------
 # Neuinfektionen berechnen 
-neuinfektionen_berechnen <- function(agents_ff,
-                                     zeiten_ff) {
+erkannte_neuinfektionen_berechnen <- function(agents_ff,
+                                              zeiten_ff) {
   
   #TESTCODE
   # agents_ff <- agents_f
   # zeiten_ff <- zeiten_f
   
+  # FIlter nach jene die in Quarantaene sind aber noch zeit 0 darin verbracht haben
+  # -> muss nach Status aenderung ausgefuehrt werden
   temp1 <- agents_ff %>%
-    filter(infected == TRUE) %>%
+    filter(quarantine == TRUE) %>%
     inner_join(zeiten_ff, by = "Id_agent") %>%
-    filter(time_infected == 0) %>%
+    filter(time_quarantine == 0) %>%
     nrow()
   
   return(temp1)
 }
 
-#----------------------------------------------------------------
+# Getestet oder nicht
+getestet_entscheiden <- function(agents_ff,
+                                 zeiten_f,
+                                 detection_wsk_per_agent_ff) {
+  
+  #TESTCODE
+  # agents_ff <- agents
+  # zeiten_f <- zeiten
+  # detection_wsk_per_agent_ff <- detection_wsk_per_agent_f
+  
+  # waehle interessante Spalten
+  temp1 <- agents_ff %>%
+    select(Id_agent, infected, infectious, tested, quarantine,removed)
+  
+  # fuege Zeiten, Gesunheitsstatus und detection wsk zusammen
+  temp2 <- zeiten_f %>%
+    inner_join(temp1, by = "Id_agent") %>%
+    inner_join(detection_wsk_per_agent_ff, by = "Id_agent")
+  
+  # filter jene, die infektioes sind und inkubation fertig ist
+  agents_to_test <- temp2 %>%
+    filter(infectious == TRUE & (time_infected + time_infectious) == expected_incubation)
+  
+  # fuege entdeckungswsk hinzu
+  agents_to_test <- agents_to_test %>%
+    mutate(test_wsk = round(runif(n()) * 100)) %>%
+    select(Id_agent, wsk, test_wsk)
+  
+  # filter nach jene die getestet werden
+  agents_to_test <- agents_to_test %>%
+    filter(test_wsk <= wsk)
+  
+  # setze deren Status tested = TRUE
+  agents_ff <- agents_ff %>%
+    mutate(tested = if_else(Id_agent %in% agents_to_test$Id_agent, TRUE, tested))
+  
+  return(agents_ff)
+  
+}
+
 # Restlichen Status aendern
 restlichen_status_aendern <- function(agents_ff,
                                       zeiten_ff) {
   
   #TESTCODE
   # agents_ff <- agents_f
-  # zeiten_ff <- zeiten_f
+  # zeiten_ff <- zeiten
   
+  # Waehle gesundheitsstatus der Agents aus
   temp1 <- agents_ff %>%
-    select(Id_agent, infected, infectious, removed)
+    select(Id_agent, infected, infectious, tested, quarantine,removed)
   
+  # Fuege Zeiten und Gesundheitsstatus zusammen
   temp2 <- zeiten_ff %>%
     inner_join(temp1, by = "Id_agent")
   
+  # Waehle jene aus, infektioes werden 
+  # (infected == TRUE und infected_time muss gleich der Latenzzeit sein)
   agents_getting_infectious <- temp2 %>%
     filter(infected == TRUE & time_infected == expected_latency)
   
+  # Aendere Status jener Agents, deren Id vorher vorkommt
   agents_ff <- agents_ff %>%
     mutate(infected = if_else(Id_agent %in% agents_getting_infectious$Id_agent, FALSE, infected),
            infectious = if_else(Id_agent %in% agents_getting_infectious$Id_agent, TRUE, infectious))
   
-  agents_getting_removed <- temp2 %>%
-    filter(infectious == TRUE & (time_infected + time_infectious) == (expected_unconfirmed_recovery + expected_incubation))
+  # Agents, welche ohne Quarantaene removed werden 
+  agents_getting_removed_without_quarantine <- temp2 %>%
+    filter(infectious == TRUE & tested == FALSE & (time_infected + time_infectious) == (expected_unconfirmed_recovery + expected_incubation))
   
+  # Aendere Status jener Agents, deren Id vorher vorkommt
   agents_ff <- agents_ff %>%
-    mutate(removed = if_else(Id_agent %in% agents_getting_removed$Id_agent, TRUE, removed),
-           infectious = if_else(Id_agent %in% agents_getting_removed$Id_agent, FALSE, infectious))
+    mutate(removed = if_else(Id_agent %in% agents_getting_removed_without_quarantine$Id_agent, TRUE, removed),
+           infectious = if_else(Id_agent %in% agents_getting_removed_without_quarantine$Id_agent, FALSE, infectious))
+  
+  # Agents, welche in Quarantaene gehen
+  agents_getting_in_quarantine <- temp2 %>%
+    filter(infectious == TRUE & tested == TRUE & (time_infectious + time_infected) == (expected_incubation + expected_reaction_time))
+  
+  # Aendere Status jener Agents, deren Id vorher vorkommt
+  agents_ff <- agents_ff %>%
+    mutate(infectious = if_else(Id_agent %in% agents_getting_in_quarantine$Id_agent, FALSE, infectious),
+           quarantine = if_else(Id_agent %in% agents_getting_in_quarantine$Id_agent, TRUE, quarantine))
+  
+  # Agents, die resistant werden aber davor in Quarantaene sind
+  agents_getting_removed_with_quarantine <- temp2 %>%
+    filter(quarantine == TRUE & time_quarantine == expected_quarantine)
+  
+  # Aendere Status jener Agents, deren Id vorher vorkommt
+  agents_ff <- agents_ff %>%
+    mutate(removed = if_else(Id_agent %in% agents_getting_removed_with_quarantine$Id_agent, TRUE, removed),
+           quarantine = if_else(Id_agent %in% agents_getting_removed_with_quarantine$Id_agent, FALSE, quarantine))
   
   return(agents_ff)
   
 }
 
-#----------------------------------------------------------------
 # Zeiten aendern
 zeiten_aendern <- function(agents_ff, 
                            zeiten_ff) {
@@ -691,26 +757,27 @@ zeiten_aendern <- function(agents_ff,
   # agents_ff <- agents
   # zeiten_ff <- zeiten
   
+  # Gesundheitsstatus waehlen
   temp1 <- agents_ff %>%
-    select(Id_agent, infected, infectious)
+    select(Id_agent, infected, infectious, quarantine)
   
+  # Zusammenfuegen mit Agents
   temp2 <- zeiten_ff %>%
     inner_join(temp1, by = "Id_agent")
   
+  # Zeiten um 1 erhoehen, je nachdem was TRUE ist
   temp2 <- temp2 %>%
     mutate(time_infected = if_else(infected == TRUE, time_infected + 1, time_infected), 
-           time_infectious = if_else(infectious == TRUE, time_infectious + 1, time_infectious)) %>%
-    select(- c(infected, infectious))
+           time_infectious = if_else(infectious == TRUE, time_infectious + 1, time_infectious),
+           time_quarantine = if_else(quarantine == TRUE, time_quarantine + 1, time_quarantine)) %>%
+    select(- c(infected, infectious, quarantine))
   
   return(temp2)
   
 }
 
-#----------------------------------------------------------------
-#----------------------------------------------------------------
-#-----------------------------Model------------------------------
-
-# Function fuer Tage Modellieren
+#----------------------------Models------------------------------
+# Function fuer model ohne Quarantaene
 corona_model_agent_based <- function(agents_f, 
                                      tage_f, 
                                      type_of_contactfunctions_f,
@@ -771,9 +838,11 @@ corona_model_agent_based <- function(agents_f,
       }
       
     }
-
-    agents_basic_model <- infected_status_aendern_neu(agents_basic_model, contacts)
     
+    # Infected Status aendern
+    agents_basic_model <- infected_status_aendern_ohne_quarantine(agents_basic_model, contacts)
+    
+    # Neuinfektionen berechnen
     neuinfektionen <- agents_basic_model %>%
       filter(infected == TRUE & time_infected == 0) %>%
       nrow()
@@ -792,9 +861,11 @@ corona_model_agent_based <- function(agents_f,
                        R = sum(agents_basic_model$removed),
                        Neuinfektionen = neuinfektionen)
     
+    # Zeitreihe bilden
     tracker_cases <- tracker_cases %>%
       bind_rows(temp)
     
+    # Zeit mitstoppen -> Validierung
     time_end <- Sys.time()
     difference <- data.frame(time = time_end - time_begin)
     tracker_time <- tracker_time %>%
@@ -823,38 +894,37 @@ corona_model_agent_based <- function(agents_f,
   
 }
 
-#----------------------------------------------------------------
-# Function fuer Tage Modellieren mit infectious and so on
-corona_model_agent_based_2 <- function(agents_f, 
-                                       tage_f, 
-                                       type_of_contactfunctions_f,
-                                       daten_wsk_f,
-                                       goverment_f,
-                                       plotting = FALSE){
+# Function fuer Modell mit Quarantaene
+corona_model_agent_based_with_quarantine <- function(agents_f, 
+                                                     tage_f,
+                                                     type_of_contactfunctions_f,
+                                                     daten_wsk_f,
+                                                     goverment_f,
+                                                     detection_wsk_per_agent_f,
+                                                     plotting = FALSE){
   
   #TESTCODE
-  # agents_f <- agents
-  # tage_f <- tage
-  # type_of_contactfunctions_f <- type_of_contactfunctions
-  # daten_wsk_f <- daten_wsk
-  # goverment_f <- goverment
-  # plotting <- TRUE
+  agents_f <- agents
+  tage_f <- tage
+  type_of_contactfunctions_f <- type_of_contactfunctions
+  daten_wsk_f <- daten_wsk
+  goverment_f <- goverment
+  detection_wsk_per_agent_f <- detection_wsk_per_agent
+  plotting <- TRUE
   
-  # Zeitstempel fuer Infektion hinterlegen
+  # Zeitstempel fuer infectious hinterlegen
   zeiten <- tibble(Id_agent = agents_f$Id_agent)
   zeiten <- zeit_erstellen_infiziert_infektioes(agents_f, zeiten)
   
   # Namen der Kontakt functions erstellen
   kontakt_functions <- paste0("kontakte_erstellen_", type_of_contactfunctions_f)
   
-  # # Zeitstempel fuer Infektion hinterlegen
-  # agents_basic_model <- zeitstempel_hinterlegen(agents_f, "infected")
-  
   # Faelle verfolgen
   tracker_cases <- data.frame(Tag = 0,
                               S = sum(agents_f$susceptible),
                               I = sum(agents_f$infected),
                               I_ = sum(agents_f$infectious),
+                              Q = sum(agents_f$quarantine), 
                               R = sum(agents_f$removed),
                               Neuinfektionen = 0)
   
@@ -875,31 +945,41 @@ corona_model_agent_based_2 <- function(agents_f,
                            type_of_contact = c(), 
                            Id_contact = c())
     
+    # Nimm jene Agents raus die in Quarantaene sind -> Haben keine Kontakte
+    agents_not_quarantine <- agents_f %>%
+      filter(quarantine == FALSE)
+    
     for (funktion in kontakt_functions) {
       
       temp_func <- get(funktion)
       
       if (grepl("freizeit", funktion) == TRUE) {
         
-        contacts <- temp_func(agents_f, contacts, daten_wsk_f, goverment_day)
+        contacts <- temp_func(agents_not_quarantine, contacts, daten_wsk_f, goverment_day)
         
       } else {
         
-        contacts <- temp_func(agents_f, contacts)
+        contacts <- temp_func(agents_not_quarantine, contacts)
         
       }
       
     }
     
-    agents_f <- infected_status_aendern_neu_2(agents_f, contacts)
+    # Infected Status aendern
+    agents_f <- infected_status_aendern_mit_quarantine(agents_f, contacts)
+    
+    # Quarantaene Test
+    agents_f <- getestet_entscheiden(agents_ff = agents_f,
+                                     zeiten_f = zeiten,
+                                     detection_wsk_per_agent_ff = detection_wsk_per_agent_f)
+    
+    # restlichen Status aendern 
+    agents_f <- restlichen_status_aendern(agents_ff = agents_f,
+                                          zeiten_ff = zeiten) 
     
     # Neuinfektionen berechnen
-    neuinfektionen <- neuinfektionen_berechnen(agents_ff = agents_f,
-                                               zeiten_ff = zeiten)
-    
-    # Status aendern 
-    agents_f <- restlichen_status_aendern(agents_ff = agents_f,
-                                          zeiten_ff = zeiten)
+    neuinfektionen <- erkannte_neuinfektionen_berechnen(agents_ff = agents_f,
+                                                        zeiten_ff = zeiten)
     
     # Zeiten aendern
     zeiten <- zeiten_aendern(agents_ff = agents_f, 
@@ -910,6 +990,7 @@ corona_model_agent_based_2 <- function(agents_f,
                        S = sum(agents_f$susceptible),
                        I = sum(agents_f$infected),
                        I_ = sum(agents_f$infectious),
+                       Q = sum(agents_f$quarantine),
                        R = sum(agents_f$removed),
                        Neuinfektionen = neuinfektionen)
     
@@ -927,13 +1008,15 @@ corona_model_agent_based_2 <- function(agents_f,
   cat(paste0("Die durchschnittliche Dauer pro Tag beträgt ", mean(tracker_time$time), "!\n",
              "Die Gesamtzeit beträgt ", sum(tracker_time$time), "!\n"))
   
+  # Make the data longer
+  tracker_cases <- tracker_cases %>%
+    pivot_longer(cols = - Tag, names_to = "type", values_to = "Wert")
+  
   if (plotting == TRUE) {
     
     plot <- ggplot(tracker_cases) +
       aes(x = Tag) +
-      geom_line(aes(y = S), color = "green") +
-      geom_line(aes(y = I), color = "red") +
-      geom_line(aes(y = R)) +
+      geom_line(aes(y = Wert, color = type)) +
       ylim(0, length(agents_f$Id_agent))
     
     print(plot)
@@ -944,15 +1027,16 @@ corona_model_agent_based_2 <- function(agents_f,
   
 }
 
-
-#----------------------------------------------------------------
+#---------------------Monte-Carlo-Simulation---------------------
 # Monte Carlo Simulation
 monte_carlo_simulation <- function(agents_ff, 
                                    tage_ff, 
                                    type_of_contactfunctions_ff,
                                    daten_wsk_ff,
                                    goverment_ff,
-                                   times_f) {
+                                   detection_wsk_per_agent_ff,
+                                   times_f,
+                                   quarantine) {
   
   #TESTCODE
   # agents_ff <- agents
@@ -966,23 +1050,49 @@ monte_carlo_simulation <- function(agents_ff,
   
   I <- tibble(Tage = 0:tage_ff)
   
+  Q <- tibble(Tage = 0:tage_ff)
+  
   for (i in 1:times_f) {
     
     col_name <- paste0("Durchlauf_", i) 
     
-    temp <- corona_model_agent_based(agents_f = agents_ff,
-                                     tage_f = tage_ff,
-                                     type_of_contactfunctions_f = type_of_contactfunctions_ff,
-                                     daten_wsk_f = daten_wsk_ff,
-                                     goverment_f = goverment_ff)
-    
-    neuinfektion <- neuinfektion %>%
-      mutate({{col_name}} := temp$Neuinfektionen)
-    
-    I <- I %>%
-      mutate({{col_name}} := temp$I)
-    
-    cat(paste0(col_name, " von ", times_f, " ist erledigt!\n"))
+    if (quarantine == FALSE) {
+      
+      temp <- corona_model_agent_based(agents_f = agents_ff,
+                                       tage_f = tage_ff,
+                                       type_of_contactfunctions_f = type_of_contactfunctions_ff,
+                                       daten_wsk_f = daten_wsk_ff,
+                                       goverment_f = goverment_ff)
+      
+      neuinfektion <- neuinfektion %>%
+        mutate({{col_name}} := temp$Neuinfektionen)
+      
+      I <- I %>%
+        mutate({{col_name}} := temp$I)
+      
+      cat(paste0(col_name, " von ", times_f, " ist erledigt!\n"))
+      
+    } else {
+      
+      temp <- corona_model_agent_based_with_quarantine(agents_f = agents_ff,
+                                                       tage_f = tage_ff,
+                                                       type_of_contactfunctions_f = type_of_contactfunctions_ff,
+                                                       daten_wsk_f = daten_wsk_ff,
+                                                       goverment_f = goverment_ff,
+                                                       detection_wsk_per_agent_f = detection_wsk_per_agent_ff)
+      
+      neuinfektion <- neuinfektion %>%
+        mutate({{col_name}} := temp$Neuinfektionen)
+      
+      I <- I %>%
+        mutate({{col_name}} := temp$I_)
+      
+      Q <- Q %>%
+        mutate({{col_name}} := temp$Q)
+      
+      cat(paste0(col_name, " von ", times_f, " ist erledigt!\n"))
+      
+    }
     
   }
   
@@ -998,7 +1108,13 @@ monte_carlo_simulation <- function(agents_ff,
   I <- I %>%
     mutate(durchschnitt = rowMeans(I))
   
-  return(list(I = I, Neuinfektion = neuinfektion))
+  Q <- Q %>% 
+    select(- Tage)
+  
+  Q <- Q %>%
+    mutate(durchschnitt = rowMeans(Q))
+  
+  return(list(I = I, Neuinfektion = neuinfektion, Q = Q))
   
 } 
 
@@ -1161,7 +1277,7 @@ infektion <- function(daten_agent) {
 }
 
 # Status aendern falls notwendig
-infected_status_aendern <- function(daten_agent) {
+infected_status_aendern_ALT <- function(daten_agent) {
   
   #TESTCODE
   # daten_agent <- agents
