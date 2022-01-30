@@ -1,6 +1,8 @@
 library(tidyverse)
 library(jsonlite)
 library(readxl)
+library(osmdata)
+library(sf)
 
 source("./scripts/function_initialisierung.R")
 
@@ -13,6 +15,72 @@ file_municipality <- "/Users/danielkaras/Desktop/Masterarbeit/corona_modeling_au
 
 # Daten einlesen
 geo_raw_data_for_municipality <- fromJSON(file_municipality) 
+
+# TEST
+melk_bbox <- getbb("Bezirk Melk, austria", format_out = "polygon")
+
+melk_boundary <- opq(melk_bbox) %>% 
+  add_osm_feature(key = "admin_level", value = "8") %>% 
+  osmdata_sf()
+
+melk_polys <- melk_boundary$osm_multipolygons
+
+melk_polys <- melk_polys %>%
+  filter(grepl("315", ref.at.gkz) == TRUE)
+
+melk_polys <- melk_polys %>%
+  select(osm_id, name, ref.at.gkz, type, geometry)
+
+melk_polys$poly_area <- st_area(melk_polys)
+
+centre <- st_centroid(melk_polys)
+
+centre$Id <- 1:max(nrow(centre))
+
+# ggplot() +
+#   geom_sf(data = melk_polys) +
+#   geom_sf(data = centre)
+
+melk_road <- opq(melk_bbox) %>%
+  add_osm_feature(key = "highway") %>%
+  osmdata_sf()
+
+melk_lines <- melk_road$osm_lines
+
+melk_lines <- melk_lines %>%
+  select(osm_id, highway, geometry)
+
+# ggplot() +
+#   geom_sf(data = melk_polys, aes(color = name), show.legend = FALSE) +
+#   geom_sf(data = melk_lines)
+
+# ggplot() +
+#   geom_sf(data = melk_polys) +
+#   geom_sf(data = melk_lines, aes(color = name), show.legend = FALSE) +
+#   geom_sf(data = centre)
+
+g <- dodgr::weight_streetnet(melk_lines, wt_profile = "motorcar")
+
+distance_between_municipality <- tibble(Id_from = centre$ref.at.gkz)
+
+for (i in 1:40){
+  
+  from <- st_coordinates(centre)
+  to <- st_coordinates(slice(centre, i))
+  temp <- dodgr::dodgr_dists(graph = g, from = from, to = to, shortest = FALSE)
+  
+  temp_df <- as.data.frame(temp)
+  
+  colnames(temp_df) <- centre$ref.at.gkz[i]
+  
+  distance_between_municipality <- distance_between_municipality %>%
+    bind_cols(temp_df)
+  
+  print(centre$ref.at.gkz[i])
+}
+
+distance_between_municipality_long <- distance_between_municipality %>%
+  pivot_longer(cols = - Id_from, names_to = "Id_to", values_to = "distance")
 
 # Bezirk Melk beginnt immer mit 315 -> "^315"
 # bezirksdaten_sehen() # Um Id auszuwaehlen
@@ -39,6 +107,48 @@ distance_between_centre <- abstand_mittelpunkte_berechnen(infos_mumicipality)
 #   geom_point(data = centre_municipality, aes(X,Y, color = distance_matrix$`31524`))
 
 infos_mumicipality <- bevoelkerungs_anzahl_name_hinzufuegen(infos_mumicipality, district)
+
+#TESTEN
+
+test <- distance_between_municipality_long %>% 
+  filter(distance != 0) %>% 
+  group_by(Id_from) %>% 
+  filter(distance == min(distance)) %>%
+  ungroup()
+
+name_to <- infos_mumicipality %>%
+  select(Id_municipality, name) %>%
+  rename(name_to = name) %>%
+  mutate(Id_municipality = as.character(Id_municipality))
+
+name_from <- name_to %>%
+  rename(name_from = name_to)
+
+ergebnis_osm <- test %>%
+  inner_join(name_from, by = c("Id_from" = "Id_municipality")) %>%
+  inner_join(name_to, by = c("Id_to" = "Id_municipality"))
+
+test <- distance_between_centre %>% 
+  filter(distance != 0) %>% 
+  group_by(centre_1) %>% 
+  filter(distance == min(distance)) %>%
+  ungroup() %>%
+  mutate(centre_1 = as.character(centre_1),
+         centre_2 = as.character(centre_2))
+
+temp <- test %>%
+  inner_join(name_from, by = c("centre_1" = "Id_municipality")) %>%
+  inner_join(name_to, by = c("centre_2" = "Id_municipality")) %>%
+  select(name_from, name_to) %>%
+  rename(name_to_alt = name_to)
+
+ergebnis_osm <- ergebnis_osm %>%
+  inner_join(temp, by = "name_from")
+  
+nrow(ergebnis_osm %>% filter(name_to != name_to_alt))
+
+#TESTENENDE
+
 wsk_between_centre <- pendelwsk_berechnen(infos_mumicipality, 
                                           distance_between_centre, 
                                           speichern = FALSE,

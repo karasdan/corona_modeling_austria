@@ -126,6 +126,8 @@ melk_polys$poly_area <- st_area(melk_polys)
 
 centre <- st_centroid(melk_polys)
 
+centre$Id <- 1:max(nrow(centre))
+
 # ggplot() +
 #   geom_sf(data = melk_polys) +
 #   geom_sf(data = centre)
@@ -144,10 +146,10 @@ melk_lines <- melk_lines %>%
 #   geom_sf(data = melk_lines)
 
 # Filter nach jene Straßen die innerhalb sind
-melk_lines <- st_join(melk_lines, melk_polys, join = st_within)
+# melk_lines <- st_join(melk_lines, melk_polys, join = st_within)
 
-melk_lines <- melk_lines %>%
-  filter(! is.na(osm_id.y))
+# melk_lines <- melk_lines %>%
+#   filter(! is.na(osm_id.y))
 
 # ggplot() +
 #   geom_sf(data = melk_polys) +
@@ -157,8 +159,32 @@ melk_lines <- melk_lines %>%
 g <- dodgr::weight_streetnet(melk_lines, wt_profile = "motorcar")
 
 from <- st_coordinates(centre)
-to <- st_coordinates(centre)
-d <- dodgr::dodgr_dists(graph = g, from = from, to = to)
+to <- st_coordinates(slice(centre, 1:40))
+d <- dodgr::dodgr_dists(graph = g, from = from, to = to, shortest = TRUE)
 
 df <- as.data.frame(d)
+
+distance_between_municipality <- tibble(Id_from = centre$ref.at.gkz)
+
+for (i in 1:40){
+  
+  from <- st_coordinates(centre)
+  to <- st_coordinates(slice(centre, i))
+  temp <- dodgr::dodgr_dists(graph = g, from = from, to = to, shortest = FALSE)
+  
+  temp_df <- as.data.frame(temp)
+  
+  colnames(temp_df) <- centre$ref.at.gkz[i]
+  
+  distance_between_municipality <- distance_between_municipality %>%
+    bind_cols(temp_df)
+  
+  print(centre$ref.at.gkz[i])
+}
+
+distance_between_municipality_long <- distance_between_municipality %>%
+  pivot_longer(cols = - Id_from, names_to = "Id_to", values_to = "distance_in_km")
+
+
+
 
