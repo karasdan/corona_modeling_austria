@@ -1,7 +1,6 @@
 
-#----------------------------------------------------------------
-#----------------------------------------------------------------
-#----------------------Agentsinitialisierung---------------------
+#----------------------Geodaten + Pendelwsk----------------------
+
 #Bezirksdaten zum nachlesen
 bezirksdaten_sehen <- function(speichern = FALSE){
   
@@ -43,138 +42,135 @@ bezirksdaten_sehen <- function(speichern = FALSE){
   }
 }
 
-#----------------------------------------------------------------
-# Waehle Koordinaten von Gemeinden von bestimmten District
-koordinaten_auswaehlen_gemeinde <- function(raw_daten, district_wahl) {
+# OSM Data verwenden fuer Distanz berechnen
+distance_aus_OSM_daten_berechnen <- function(district_name_f, district_number_f) {
   
   #TESTCODE
-  # raw_daten <- raw_data_gemeinde_bevoelkerung
-  # district_wahl <- district
+  # district_name_f <- district_name
+  # district_number_f <- district_number
   
-  indices <- which(str_detect(raw_daten$features$properties$iso, paste0("^", district_wahl)))
-  iso <- as.numeric(raw_daten$features$properties$iso[indices])
-  name <- raw_daten$features$properties$name[indices]
+  # Bezirksname definieren
+  district_name_f <- paste0("Bezirk ", district_name_f)
   
-  for (j in 1:length(indices)) {
+  # Bounding box waehlen
+  melk_bbox <- getbb(district_name_f, format_out = "polygon")
+  
+  # Grenzen der einzelenen Gemeinden aus OSM Daten laden -> Polygone
+  melk_boundary <- opq(melk_bbox) %>% 
+    add_osm_feature(key = "admin_level", value = "8") %>% 
+    osmdata_sf()
+  
+  # Nur Polygondaten auswaehlen
+  melk_municipality_boundary <- melk_boundary$osm_multipolygons
+  
+  # Alle mit richtigem Beginn waehlen
+  melk_municipality_boundary <- melk_municipality_boundary %>%
+    filter(grepl(district_number_f, substr(melk_municipality_boundary$ref.at.gkz, 1, 3)) == TRUE)
+  
+  # Relevante spalten waehlen
+  melk_municipality_boundary <- melk_municipality_boundary %>%
+    select(osm_id, name, ref.at.gkz, type, geometry)
+  
+  # Flaeche hinzufuegen
+  melk_municipality_boundary$poly_area <- st_area(melk_municipality_boundary)
+  
+  # Zentren berechnen
+  centre <- st_centroid(melk_municipality_boundary)
+  
+  # id hinzufuegen
+  centre$Id <- 1:max(nrow(centre))
+  
+  # ggplot() +
+  #   geom_sf(data = melk_municipality_boundary) +
+  #   geom_sf(data = centre)
+  
+  # Straßen extrahieren
+  melk_road <- opq(melk_bbox) %>%
+    add_osm_feature(key = "highway") %>%
+    osmdata_sf()
+  
+  # Nur die Linien herausnehmen
+  melk_road_data <- melk_road$osm_lines
+  
+  melk_road_data <- melk_road_data %>%
+    select(osm_id, highway, geometry)
+  
+  # ggplot() +
+  #   geom_sf(data = melk_municipality_boundary, aes(color = name), show.legend = FALSE) +
+  #   geom_sf(data = melk_road_data)
+
+  # Gewichteten Graphen aus Straßennetz machen -> Mit Auto
+  g <- dodgr::weight_streetnet(melk_road_data, wt_profile = "motorcar")
+  
+  # Hilfstibble
+  distance_between_municipality <- tibble()
+  
+  for (i in 1:length(centre$Id)){
     
-    coordinates <- raw_daten$features$geometry$coordinates[[indices[j]]]
+    # waehle immer nur eine Gemeine aus wohin man reist und berechne es von jeder zu dieser
+    from <- st_coordinates(slice(centre, i))
+    to <- st_coordinates(centre)
     
-    laenge <- (length(coordinates)/2)
+    # Distanz berechnen -> shortest = FALSE damit ich schnellsten habe
+    temp <- dodgr::dodgr_dists(graph = g, from = from, to = to, shortest = FALSE)
     
-    X <- coordinates[1: laenge]
-    Y <- coordinates[(laenge + 1): (laenge * 2)]
+    # Als Data.frame
+    temp_df <- as.data.frame(temp)
     
-    if (exists("coordinates_gesamt") == FALSE) {
-      
-      coordinates_gesamt <- data.frame(name = rep(name[j], laenge),
-                                       Id_municipality = rep(iso[j], laenge),
-                                       Id_point = seq(1, laenge),
-                                       X = X, 
-                                       Y = Y)
-      
-    } else {
-      
-      temp1 <- data.frame(name = rep(name[j], laenge),
-                          Id_municipality = rep(iso[j], laenge),
-                          Id_point = seq(1, laenge),
-                          X = X, 
-                          Y = Y)
-      
-      coordinates_gesamt <- coordinates_gesamt %>%
-        bind_rows(temp1)
-      
-    }
+    # Spaltennamen hinzufuegen
+    colnames(temp_df) <- centre$ref.at.gkz
+
+    # Id der Gemeinde
+    id <- centre$ref.at.gkz[i]
+    
+    # Waehle das dazugehoerige Center aus
+    centre_one <- centre %>% filter(ref.at.gkz == id)
+
+    # Die Grenzen dieser Gemeinde 
+    boundary_one <- melk_municipality_boundary %>% filter(ref.at.gkz == id)
+
+    to <- st_coordinates(boundary_one)
+    from <- st_coordinates(centre_one)
+
+    temp <- dodgr::dodgr_dists(graph = g, from = from, to = to, shortest = FALSE)
+
+    # Rechne mir die durchschnittliche Zeit zur Grenze vom Center aus
+    average_rand_distance <- mean(temp, na.rm = TRUE)
+    
+    # Shifte um diesen Beitrag die Werte
+    temp_df <- temp_df + average_rand_distance
+    
+    # Fuege die Id_from hinzu -> aktuelle Gemeinde
+    temp_df <- temp_df %>%
+      mutate(Id_from = id, .before = 1)
+    
+    # Distanz zusammen in einem Tibble
+    distance_between_municipality <- distance_between_municipality %>%
+      bind_rows(temp_df)
+    
+    cat(paste0("Gemeinde: ", i, "/", centre$Id, "\n"))
   }
   
-  return(coordinates_gesamt)
+  # Laenger machen den Data.frame
+  distance_between_municipality_long <- distance_between_municipality %>%
+    pivot_longer(cols = - Id_from, names_to = "Id_to", values_to = "distance")
+  
+  # test <- distance_between_municipality_long %>%
+  #   group_by(Id_from) %>%
+  #   filter(distance == min(distance))
+  
+  return(distance_between_municipality_long)
   
 }
 
-#----------------------------------------------------------------
-# Mittelpunkt berechnen
-mittelpunkt_berechnen <- function(koordinaten_daten) {
-  
-  #TESTCODE
-  # koordinaten_daten <- coordinates_mumicipality
-  
-  for (j in unique(koordinaten_daten$Id_municipality)) {
-    
-    if (exists("centre_gesamt") == FALSE) {
-      
-      temp1 <- koordinaten_daten %>%
-        filter(Id_municipality == j) %>%
-        select(X,Y)
-      
-      centre_gesamt <- data.frame(Id_municipality = j,
-                                  X = geosphere::centroid(temp1)[1],
-                                  Y = geosphere::centroid(temp1)[2])
-      
-    } else {
-      
-      temp1 <- koordinaten_daten %>%
-        filter(Id_municipality == j) %>%
-        select(X,Y)
-      
-      temp2 <- data.frame(Id_municipality = j,
-                          X = geosphere::centroid(temp1)[1],
-                          Y = geosphere::centroid(temp1)[2])
-      
-      centre_gesamt <- centre_gesamt %>%
-        bind_rows(temp2)
-    }
-  }
-  
-  return(centre_gesamt)
-  
-}
-
-#----------------------------------------------------------------
-# Abstaende der einzelnen Mittelpunkte ausrechnen
-abstand_mittelpunkte_berechnen <- function(centre_daten) {
-  
-  #TESTCODE
-  # centre_daten <- centre_municipality
-  
-  combinations_centre <- expand.grid(centre_daten$Id_municipality, centre_daten$Id_municipality) %>%
-    rename(centre_1 = Var1,
-           centre_2 = Var2)
-  
-  combinations_centre <- combinations_centre %>%
-    rename(Id_municipality = centre_1) %>%
-    right_join(centre_daten, by = "Id_municipality") %>%
-    rename(centre_1 = Id_municipality,
-           X_1 = X,
-           Y_1 = Y)
-  
-  combinations_centre <- combinations_centre %>%
-    rename(Id_municipality = centre_2) %>%
-    right_join(centre_daten, by = "Id_municipality") %>%
-    rename(centre_2 = Id_municipality,
-           X_2 = X,
-           Y_2 = Y)
-  
-  combinations_centre <- combinations_centre %>%
-    mutate(difference_X = X_1 - X_2,
-           difference_Y = Y_1 - Y_2) %>%
-    mutate(difference_X = difference_X^2,
-           difference_Y = difference_Y^2) %>%
-    mutate(summe = difference_X + difference_Y) %>%
-    mutate(distance = sqrt(summe)) %>%
-    select(- c(difference_X, difference_Y, summe, X_1, Y_1, X_2, Y_2))
-  
-  return(combinations_centre)
-  
-}
-
-#----------------------------------------------------------------
 # Bevoelkerung pro Gemeinde 2019 relative und absolut hinzufuegen
-bevoelkerungs_anzahl_name_hinzufuegen <- function(info_daten, district_wahl) {
+bevoelkerungs_anzahl_name_hinzufuegen <- function(info_daten, district_number_f) {
   
   #TESTCODE
   # info_daten <- infos_mumicipality
-  # district_wahl <- district
+  # district_number_f <- district_number
   
-  district_wahl <- as.numeric(district_wahl)
+  district_number_f <- as.numeric(district_number_f)
   
   raw_data_gemeinde_bevoelkerung <- read_excel("data/Bevoelkerung_Gemeinde_und_Haushatsgroeßen/endgueltige_bevoelkerungszahl_fuer_das_finanzjahr_2021_je_gemeinde.xlsx",
                                                skip = 6)
@@ -198,7 +194,7 @@ bevoelkerungs_anzahl_name_hinzufuegen <- function(info_daten, district_wahl) {
     mutate(Id_municipality = as.numeric(Id_municipality))
   
   temp1 <- bevoelkerung_gemeinde %>%
-    filter(Id_district == district_wahl)
+    filter(Id_district == district_number_f)
   
   temp1 <- temp1 %>%
     select(Id_municipality, name, Anzahl, Anzahl_rel)
@@ -210,7 +206,66 @@ bevoelkerungs_anzahl_name_hinzufuegen <- function(info_daten, district_wahl) {
   
 }
 
-#----------------------------------------------------------------
+# Pendelwsk fuer Gemeinden
+pendelwsk_berechnen <- function(daten_info, 
+                                daten_distanzen,
+                                bezirkswahl) {
+  
+  #TESTCODE
+  # daten_info <- infos_mumicipality
+  # daten_distanzen <- distance_between_centre
+  
+  # Alles numerisch machen
+  daten_distanzen$Id_from <- as.numeric(daten_distanzen$Id_from)
+  daten_distanzen$Id_to <- as.numeric(daten_distanzen$Id_to)
+  
+  # Waehle relevanten Daten von Infos aus
+  temp1 <- daten_info %>%
+    select(Id_municipality, Anzahl_rel) 
+  
+  # temp2 <- daten_distanzen %>%
+  #   mutate(distance_new = distance + distanz_wahl)
+  
+  # Umbenennen der Id-Spalten
+  temp2 <-  daten_distanzen %>%
+    rename(centre_i = Id_from, # centre_1 = Id_from
+           centre_j = Id_to) # centre_2 = Id_to
+  
+  # Zusammen fuegen, dass wir relativen Bevoelkerung pro centre_j = Id_from haben
+  daten_distanzen <- temp2 %>%
+    left_join(temp1, by = c("centre_j" = "Id_municipality"))
+  
+  # Division berechnen
+  daten_distanzen <- daten_distanzen %>%
+    mutate(division = Anzahl_rel/distance)
+  
+  # Fuege nochmal alles hinzu
+  temp3 <- temp2 %>%
+    left_join(temp1, by = c("centre_j" = "Id_municipality"))
+  
+  # Jetzt Faktor c_i berechnen
+  temp3 <- temp3 %>%
+    group_by(centre_i) %>%
+    summarise(c_i = sum(Anzahl_rel/distance_new)) 
+  
+  # Wieder joinen nur jetzt ueber centre_i
+  daten_distanzen <- daten_distanzen %>%
+    left_join(temp3, by = "centre_i")
+  
+  # WSK berechnen in Email von Prof. beschrieben
+  daten_distanzen <- daten_distanzen %>%
+    mutate(wsk = division/c_i)
+  
+  # Wichtige sachen auswaehlen
+  daten_wsk <- daten_distanzen %>%
+    select(centre_i, centre_j, wsk)
+  
+  return(daten_wsk)
+  
+}
+
+#------------------------Agents erstellen------------------------
+
 # Bevoelkerungszahlen altersklassen und Einzeljahre 
 einlesen_und_bearbeite_bevoelkerlungszahlen <- function(path_altersklasse, 
                                                         path_einzeljahre,
@@ -259,7 +314,6 @@ einlesen_und_bearbeite_bevoelkerlungszahlen <- function(path_altersklasse,
               einzeljahre = daten_einzeljahre))
 }
 
-#----------------------------------------------------------------
 # Maennlich, weibliche Agents generieren
 geschlecht_erstellen <- function(daten_agent, daten_district, anzahl) {
   
@@ -282,7 +336,6 @@ geschlecht_erstellen <- function(daten_agent, daten_district, anzahl) {
   return(daten_agent)
 }
 
-#----------------------------------------------------------------
 # Alter hinzufuegen
 alter_erstellen <- function(daten_agent, daten_bevoelkerung, auswahl) {
   
@@ -405,7 +458,6 @@ alter_erstellen <- function(daten_agent, daten_bevoelkerung, auswahl) {
   
 }
 
-#----------------------------------------------------------------
 # Zugehoerige Gemeinde waehlen
 gemeinde_waehlen <- function(daten_agent, daten_info, anzahl) {
   
@@ -429,7 +481,6 @@ gemeinde_waehlen <- function(daten_agent, daten_info, anzahl) {
   
 }
 
-#----------------------------------------------------------------
 # Haushaltszahlen einlesen
 einlesen_und_bearbeite_haushaltszahlen <- function(path_haushalt){
  
@@ -466,82 +517,20 @@ einlesen_und_bearbeite_haushaltszahlen <- function(path_haushalt){
    
 }
 
-#----------------------------------------------------------------
-# Einlesen und bearbeiten Arbeitsplatzdaten
-einlesen_und_bearbeite_arbeitsplatzdaten <- function(path_arbeitsplatz) {
-  
-  #TESTCODE
-  # path_arbeitsplatz <- "data/Arbeitsstaetten/gemeindeergebnisse_der_abgestimmten_erwerbsstatistik_und_arbeitsstaettenza.xlsx"
-  
-  daten_workplace_raw <- read_excel(path_arbeitsplatz)
-  
-  colnames(daten_workplace_raw) <- daten_workplace_raw[3,]
-  colnames(daten_workplace_raw)[1:2] <- c("iso", "name")
-  colnames(daten_workplace_raw) <- gsub(" ", "", colnames(daten_workplace_raw))
-  colnames(daten_workplace_raw) <- gsub("\n", "", colnames(daten_workplace_raw))
-  colnames(daten_workplace_raw) <- gsub("\r", "", colnames(daten_workplace_raw))
-  
-  daten_workplace_raw <- daten_workplace_raw %>%
-    filter(! is.na(name)) %>%
-    filter(! is.na(AnteilderPersonenunter15Jahren)) %>%
-    mutate(iso = as.numeric(iso))
-  
-  daten_workplace_raw <- daten_workplace_raw %>%
-    filter(nchar(iso) > 1)
-  
-  temp1 <- daten_workplace_raw %>%
-    filter(nchar(iso) == 5) %>%
-    mutate(iso_district = substr(iso, 1, 3))
-  
-  temp2 <- daten_workplace_raw %>%
-    filter(nchar(iso) == 3) %>%
-    filter(! (iso %in% unique(temp1$iso_district))) %>%
-    mutate(iso = iso * 100 + 1)
-  
-  temp1 <- temp1 %>%
-    select(- iso_district)
-  
-  daten_workplace <- temp1 %>%
-    bind_rows(temp2) %>%
-    arrange(iso)
-  
-  return(daten_workplace)
-  
-}
-
-#----------------------------------------------------------------
-# Hinzufuegen der wihtigen Daten pro Bezirk
-arbeitsplatzdaten_hinzufuegen <- function(daten_info, daten_arbeitsplatz) {
-  
-  #TESTCODE 
-  # daten_info <- infos_mumicipality
-  # daten_arbeitsplatz <- arbeitsplatz_daten
-  
-  daten_arbeitsplatz <- daten_arbeitsplatz %>%
-    select(iso, `AnteilderAuspendler/-innenandenaktivErwerbs-tätigenamWohnort`, `Arbeitslosenquote(15Jahreundälter)`, Arbeitsstätten, BeschäftigteindenArbeitsstätten) %>%
-    rename(Id_municipality = iso) %>%
-    mutate_all(as.numeric)
-  
-  daten_info <- daten_info %>%
-    left_join(daten_arbeitsplatz, by = "Id_municipality")
-  
-  return(daten_info)
-  
-}
-
-#----------------------------------------------------------------
 # Haushaltsanzahl pro Gemeinde erstellen 
-haushaltsanzahl_erstellen <- function(daten_info, daten_haushalt_bundesland, daten_agents) {
+haushaltsanzahl_erstellen <- function(daten_info, daten_haushalt_bundesland, daten_agents,
+                                      district_number_f) {
   
   #TESTCODE 
   # daten_info <- infos_mumicipality
   # daten_haushalt_bundesland <- haushalts_gesamt_daten$haushalts_daten_bundesland
   # daten_agents <- agents
+  # district_number_f <- district_number
   
   temp1 <- bezirksdaten_sehen(speichern = TRUE)
   
   temp1 <- temp1 %>%
-    filter(Id_district == as.numeric(district))
+    filter(Id_district == as.numeric(district_number_f))
   
   bundesland <- temp1$bundesland
   
@@ -610,7 +599,6 @@ haushaltsanzahl_erstellen <- function(daten_info, daten_haushalt_bundesland, dat
   
 }
 
-#----------------------------------------------------------------
 # Haushalte erstellen bezueglich Gemeinden
 haushalte_auf_gemeindeebene_erstellen <- function(daten_agent, daten_info) {
   
@@ -621,7 +609,7 @@ haushalte_auf_gemeindeebene_erstellen <- function(daten_agent, daten_info) {
   dateiname <<- paste0(dateiname, "_household")
   
   infos_haushalte_longer <- daten_info %>%
-    select(- c(name, Anzahl, Anzahl_rel, X, Y)) %>%
+    select(- c(name, Anzahl, Anzahl_rel)) %>%
     pivot_longer(! Id_municipality, names_to = "Haushaltsart", values_to = "Anzahl")
   
   infos_haushalte_longer <- infos_haushalte_longer %>%
@@ -726,74 +714,67 @@ haushalte_auf_gemeindeebene_erstellen <- function(daten_agent, daten_info) {
   
 }
 
-#----------------------------------------------------------------
-# Pendelwsk fuer Gemeinden
-pendelwsk_berechnen <- function(daten_info, 
-                                daten_distanzen, 
-                                distanz_wahl = 0.05,
-                                speichern,
-                                bezirkswahl) {
+# Einlesen und bearbeiten Arbeitsplatzdaten
+einlesen_und_bearbeite_arbeitsplatzdaten <- function(path_arbeitsplatz) {
   
   #TESTCODE
-  # daten_info <- infos_mumicipality
-  # daten_distanzen <- distance_between_centre
-  # distanz_wahl <- 0.05
+  # path_arbeitsplatz <- "data/Arbeitsstaetten/gemeindeergebnisse_der_abgestimmten_erwerbsstatistik_und_arbeitsstaettenza.xlsx"
   
-  temp1 <- daten_info %>%
-    select(Id_municipality, Anzahl_rel) 
+  daten_workplace_raw <- read_excel(path_arbeitsplatz)
   
-  temp2 <- daten_distanzen %>%
-    mutate(distance_new = distance + distanz_wahl)
+  colnames(daten_workplace_raw) <- daten_workplace_raw[3,]
+  colnames(daten_workplace_raw)[1:2] <- c("iso", "name")
+  colnames(daten_workplace_raw) <- gsub(" ", "", colnames(daten_workplace_raw))
+  colnames(daten_workplace_raw) <- gsub("\n", "", colnames(daten_workplace_raw))
+  colnames(daten_workplace_raw) <- gsub("\r", "", colnames(daten_workplace_raw))
   
-  temp2 <- temp2 %>%
-    rename(centre_i = centre_1,
-           centre_j = centre_2)
+  daten_workplace_raw <- daten_workplace_raw %>%
+    filter(! is.na(name)) %>%
+    filter(! is.na(AnteilderPersonenunter15Jahren)) %>%
+    mutate(iso = as.numeric(iso))
   
-  daten_distanzen <- temp2 %>%
-    rename(Id_municipality = centre_j) %>%
-    left_join(temp1, by = "Id_municipality") %>%
-    rename(centre_j = Id_municipality)
+  daten_workplace_raw <- daten_workplace_raw %>%
+    filter(nchar(iso) > 1)
   
-  daten_distanzen <- daten_distanzen %>%
-    mutate(division = Anzahl_rel/distance_new)
+  temp1 <- daten_workplace_raw %>%
+    filter(nchar(iso) == 5) %>%
+    mutate(iso_district = substr(iso, 1, 3))
   
-  temp3 <- temp2 %>%
-    rename(Id_municipality = centre_j) %>%
-    left_join(temp1, by = "Id_municipality") %>%
-    rename(centre_j = Id_municipality)
+  temp2 <- daten_workplace_raw %>%
+    filter(nchar(iso) == 3) %>%
+    filter(! (iso %in% unique(temp1$iso_district))) %>%
+    mutate(iso = iso * 100 + 1)
   
-  temp3 <- temp3 %>%
-    group_by(centre_i) %>%
-    summarise(c_i = sum(Anzahl_rel/distance_new)) 
+  temp1 <- temp1 %>%
+    select(- iso_district)
   
-  daten_distanzen <- daten_distanzen %>%
-    left_join(temp3, by = "centre_i")
+  daten_workplace <- temp1 %>%
+    bind_rows(temp2) %>%
+    arrange(iso)
   
-  daten_distanzen <- daten_distanzen %>%
-    mutate(wsk = division/c_i)
-  
-  daten_wsk <- daten_distanzen %>%
-    select(centre_i, centre_j, wsk)
-  
-  if (speichern == TRUE) {
-    
-    temp1 <- bezirksdaten_sehen(speichern = TRUE)
-    
-    temp1 <- temp1 %>%
-      filter(Id_district == as.numeric(bezirkswahl))
-    
-    setwd("./pendel_wsk")
-    save(daten_wsk, 
-         file = paste0("district", temp1$name, "_", distanz_wahl, ".RData"))
-    setwd("..")
-    
-  }
-  
-  return(daten_wsk)
+  return(daten_workplace)
   
 }
 
-#----------------------------------------------------------------
+# Hinzufuegen der wihtigen Daten pro Bezirk
+arbeitsplatzdaten_hinzufuegen <- function(daten_info, daten_arbeitsplatz) {
+  
+  #TESTCODE 
+  # daten_info <- infos_mumicipality
+  # daten_arbeitsplatz <- arbeitsplatz_daten
+  
+  daten_arbeitsplatz <- daten_arbeitsplatz %>%
+    select(iso, `AnteilderAuspendler/-innenandenaktivErwerbs-tätigenamWohnort`, `Arbeitslosenquote(15Jahreundälter)`, Arbeitsstätten, BeschäftigteindenArbeitsstätten) %>%
+    rename(Id_municipality = iso) %>%
+    mutate_all(as.numeric)
+  
+  daten_info <- daten_info %>%
+    left_join(daten_arbeitsplatz, by = "Id_municipality")
+  
+  return(daten_info)
+  
+}
+
 # Moegliche Arbeitsplaetze erstellen
 arbeitsplaetze_erstellen <- function(daten_info) {
   
@@ -824,7 +805,6 @@ arbeitsplaetze_erstellen <- function(daten_info) {
   
 }
 
-#----------------------------------------------------------------
 # Arbeit pro Agent erstellen
 arbeit_zuweisen <- function(daten_agent, daten_info) {
   
@@ -862,7 +842,6 @@ arbeit_zuweisen <- function(daten_agent, daten_info) {
   
 }
 
-#----------------------------------------------------------------
 # Arbeitsplaetze zuweisen 
 arbeitsplaetze_zuweisen <- function(daten_agent, daten_info, moegliche_arbeitsplaetze, daten_wsk) {
   
@@ -1051,7 +1030,6 @@ arbeitsplaetze_zuweisen <- function(daten_agent, daten_info, moegliche_arbeitspl
   
 }
 
-#----------------------------------------------------------------
 # Schuldaten hinzufuegen
 schuldaten_hinzufuegen <- function(daten_info) {
   
@@ -1102,7 +1080,6 @@ schuldaten_hinzufuegen <- function(daten_info) {
   
 }
 
-#----------------------------------------------------------------
 # Volksschulplaetze erstellen
 volksschulplaetze_erstellen <- function(daten_info) {
   
@@ -1136,7 +1113,6 @@ volksschulplaetze_erstellen <- function(daten_info) {
   
 }
 
-#----------------------------------------------------------------
 # Volksschulen zuweisen
 volksschulen_zuweisen <- function(daten_agent, daten_info, daten_volkschulplaetze, daten_wsk) {
   
@@ -1249,7 +1225,6 @@ volksschulen_zuweisen <- function(daten_agent, daten_info, daten_volkschulplaetz
   
 }
 
-#----------------------------------------------------------------
 # Schulplaetze erstellen
 schulplaetze_erstellen <- function(daten_info) {
   
@@ -1283,7 +1258,6 @@ schulplaetze_erstellen <- function(daten_info) {
   
 }
 
-#----------------------------------------------------------------
 # Schulen zuweisen
 schulen_zuweisen <- function(daten_agent, daten_info, daten_schulplaetze, daten_wsk) {
   
@@ -1360,7 +1334,6 @@ schulen_zuweisen <- function(daten_agent, daten_info, daten_schulplaetze, daten_
   
 }
 
-#----------------------------------------------------------------
 # Kindergartendaten hinzufuegen
 kindergartendaten_hinzufuegen <- function(daten_info) {
   
@@ -1400,7 +1373,6 @@ kindergartendaten_hinzufuegen <- function(daten_info) {
   
 }
 
-#----------------------------------------------------------------
 # Kindergartenplaetze erstellen
 kindergartenplaetze_erstellen <- function(daten_info) {
   
@@ -1434,7 +1406,6 @@ kindergartenplaetze_erstellen <- function(daten_info) {
   
 }
 
-#----------------------------------------------------------------
 # Kindergarten zuweisen
 kindergarten_zuweisen <- function(daten_agent, daten_info, daten_kindergartenplaetze, daten_wsk) {
   
@@ -1584,44 +1555,6 @@ kindergarten_zuweisen <- function(daten_agent, daten_info, daten_kindergartenpla
       
     }
   }
-  
-  return(daten_agent)
-  
-}
-
-#----------------------------------------------------------------
-# Startwerte bezueglich Infektion waehlen!
-gesundheit_erstellen <- function(daten_agent, infiziert) {
-  
-  #TESTCODE
-  # daten_agent <- agents
-  # infiziert <- 100
-  
-  dateiname <<- paste0(dateiname, "_", infiziert, "infected")
-  
-  if (infiziert == 0) {
-    
-    daten_agent <- daten_agent %>%
-      mutate(susceptible = TRUE,
-             infected = FALSE,
-             removed = FALSE)
-    
-  } else {
-    
-    daten_agent <- daten_agent %>%
-      mutate(susceptible = TRUE,
-             infected = FALSE,
-             removed = FALSE)
-    
-    indices_infiziert <- sample(1:length(daten_agent$Id_agent), infiziert)
-    
-    daten_agent$infected[indices_infiziert] <- TRUE
-    daten_agent$susceptible[indices_infiziert] <- FALSE
-    
-  }
-  
-  # daten_agent <- daten_agent %>%
-  #   order(Id_agent)
   
   return(daten_agent)
   
@@ -1791,8 +1724,166 @@ haushalt_erstellen <- function(daten_agent, daten_triangles, anzahl) {
   return(daten_agent)
 }
 
+#----------------------------------------------------------------
+# Startwerte bezueglich Infektion waehlen!
+gesundheit_erstellen <- function(daten_agent, infiziert) {
+  
+  #TESTCODE
+  # daten_agent <- agents
+  # infiziert <- 100
+  
+  dateiname <<- paste0(dateiname, "_", infiziert, "infected")
+  
+  if (infiziert == 0) {
+    
+    daten_agent <- daten_agent %>%
+      mutate(susceptible = TRUE,
+             infected = FALSE,
+             removed = FALSE)
+    
+  } else {
+    
+    daten_agent <- daten_agent %>%
+      mutate(susceptible = TRUE,
+             infected = FALSE,
+             removed = FALSE)
+    
+    indices_infiziert <- sample(1:length(daten_agent$Id_agent), infiziert)
+    
+    daten_agent$infected[indices_infiziert] <- TRUE
+    daten_agent$susceptible[indices_infiziert] <- FALSE
+    
+  }
+  
+  # daten_agent <- daten_agent %>%
+  #   order(Id_agent)
+  
+  return(daten_agent)
+  
+}
 
+#----------------------------------------------------------------
+# Waehle Koordinaten von Gemeinden von bestimmten District
+koordinaten_auswaehlen_gemeinde <- function(raw_daten, district_wahl) {
+  
+  #TESTCODE
+  # raw_daten <- raw_data_gemeinde_bevoelkerung
+  # district_wahl <- district
+  
+  indices <- which(str_detect(raw_daten$features$properties$iso, paste0("^", district_wahl)))
+  iso <- as.numeric(raw_daten$features$properties$iso[indices])
+  name <- raw_daten$features$properties$name[indices]
+  
+  for (j in 1:length(indices)) {
+    
+    coordinates <- raw_daten$features$geometry$coordinates[[indices[j]]]
+    
+    laenge <- (length(coordinates)/2)
+    
+    X <- coordinates[1: laenge]
+    Y <- coordinates[(laenge + 1): (laenge * 2)]
+    
+    if (exists("coordinates_gesamt") == FALSE) {
+      
+      coordinates_gesamt <- data.frame(name = rep(name[j], laenge),
+                                       Id_municipality = rep(iso[j], laenge),
+                                       Id_point = seq(1, laenge),
+                                       X = X, 
+                                       Y = Y)
+      
+    } else {
+      
+      temp1 <- data.frame(name = rep(name[j], laenge),
+                          Id_municipality = rep(iso[j], laenge),
+                          Id_point = seq(1, laenge),
+                          X = X, 
+                          Y = Y)
+      
+      coordinates_gesamt <- coordinates_gesamt %>%
+        bind_rows(temp1)
+      
+    }
+  }
+  
+  return(coordinates_gesamt)
+  
+}
 
+#----------------------------------------------------------------
+# Mittelpunkt berechnen
+mittelpunkt_berechnen <- function(koordinaten_daten) {
+  
+  #TESTCODE
+  # koordinaten_daten <- coordinates_mumicipality
+  
+  for (j in unique(koordinaten_daten$Id_municipality)) {
+    
+    if (exists("centre_gesamt") == FALSE) {
+      
+      temp1 <- koordinaten_daten %>%
+        filter(Id_municipality == j) %>%
+        select(X,Y)
+      
+      centre_gesamt <- data.frame(Id_municipality = j,
+                                  X = geosphere::centroid(temp1)[1],
+                                  Y = geosphere::centroid(temp1)[2])
+      
+    } else {
+      
+      temp1 <- koordinaten_daten %>%
+        filter(Id_municipality == j) %>%
+        select(X,Y)
+      
+      temp2 <- data.frame(Id_municipality = j,
+                          X = geosphere::centroid(temp1)[1],
+                          Y = geosphere::centroid(temp1)[2])
+      
+      centre_gesamt <- centre_gesamt %>%
+        bind_rows(temp2)
+    }
+  }
+  
+  return(centre_gesamt)
+  
+}
+
+#----------------------------------------------------------------
+# Abstaende der einzelnen Mittelpunkte ausrechnen
+abstand_mittelpunkte_berechnen <- function(centre_daten) {
+  
+  #TESTCODE
+  # centre_daten <- centre_municipality
+  
+  combinations_centre <- expand.grid(centre_daten$Id_municipality, centre_daten$Id_municipality) %>%
+    rename(centre_1 = Var1,
+           centre_2 = Var2)
+  
+  combinations_centre <- combinations_centre %>%
+    rename(Id_municipality = centre_1) %>%
+    right_join(centre_daten, by = "Id_municipality") %>%
+    rename(centre_1 = Id_municipality,
+           X_1 = X,
+           Y_1 = Y)
+  
+  combinations_centre <- combinations_centre %>%
+    rename(Id_municipality = centre_2) %>%
+    right_join(centre_daten, by = "Id_municipality") %>%
+    rename(centre_2 = Id_municipality,
+           X_2 = X,
+           Y_2 = Y)
+  
+  combinations_centre <- combinations_centre %>%
+    mutate(difference_X = X_1 - X_2,
+           difference_Y = Y_1 - Y_2) %>%
+    mutate(difference_X = difference_X^2,
+           difference_Y = difference_Y^2) %>%
+    mutate(summe = difference_X + difference_Y) %>%
+    mutate(distance = sqrt(summe)) %>%
+    select(- c(difference_X, difference_Y, summe, X_1, Y_1, X_2, Y_2))
+  
+  return(combinations_centre)
+  
+}
 
 
 

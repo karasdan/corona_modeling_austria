@@ -556,7 +556,10 @@ infected_status_aendern_ohne_quarantine <- function(daten_agent, daten_kontakte)
 }
 
 # Infektionsstatus aendern
-infected_status_aendern_mit_quarantine <- function(daten_agent, daten_kontakte) {
+infected_status_aendern_mit_quarantine <- function(daten_agent, 
+                                                   daten_kontakte,
+                                                   wsk_infection_hh = 0.25,
+                                                   wsk_infection_other = 0.05) {
   
   #TESTCODE
   # daten_agent <- agents_f
@@ -595,8 +598,8 @@ infected_status_aendern_mit_quarantine <- function(daten_agent, daten_kontakte) 
   # Anzahl an Infektionen pro Agent
   anzahl_infektion_pro_agent <- wsk_infektion %>%
     group_by(Id_agent, type_of_contact) %>%
-    mutate(infection = if_else(wsk < 0.25 & type_of_contact == "household", TRUE, 
-                               if_else(wsk < 0.05, TRUE, FALSE))) %>%
+    mutate(infection = if_else(wsk < wsk_infection_hh & type_of_contact == "household", TRUE, 
+                               if_else(wsk < wsk_infection_other, TRUE, FALSE))) %>%
     ungroup() 
   
   anzahl_infektion_pro_agent <- anzahl_infektion_pro_agent %>%
@@ -877,14 +880,16 @@ corona_model_agent_based <- function(agents_f,
   cat(paste0("Die durchschnittliche Dauer pro Tag beträgt ", mean(tracker_time$time), "!\n",
              "Die Gesamtzeit beträgt ", sum(tracker_time$time), "!\n"))
   
+  # Make the data longer
+  tracker_cases <- tracker_cases %>%
+    pivot_longer(cols = - Tag, names_to = "type", values_to = "Wert")
+  
   if (plotting == TRUE) {
     
     plot <- ggplot(tracker_cases) +
       aes(x = Tag) +
-      geom_line(aes(y = S), color = "green") +
-      geom_line(aes(y = I), color = "red") +
-      geom_line(aes(y = R)) +
-      ylim(0, length(agents_basic_model$Id_agent))
+      geom_line(aes(y = Wert, color = type)) +
+      ylim(0, length(agents_f$Id_agent))
     
     print(plot)
     
@@ -904,13 +909,13 @@ corona_model_agent_based_with_quarantine <- function(agents_f,
                                                      plotting = FALSE){
   
   #TESTCODE
-  agents_f <- agents
-  tage_f <- tage
-  type_of_contactfunctions_f <- type_of_contactfunctions
-  daten_wsk_f <- daten_wsk
-  goverment_f <- goverment
-  detection_wsk_per_agent_f <- detection_wsk_per_agent
-  plotting <- TRUE
+  # agents_f <- agents
+  # tage_f <- tage
+  # type_of_contactfunctions_f <- type_of_contactfunctions
+  # daten_wsk_f <- daten_wsk
+  # goverment_f <- goverment
+  # detection_wsk_per_agent_f <- detection_wsk_per_agent
+  # plotting <- TRUE
   
   # Zeitstempel fuer infectious hinterlegen
   zeiten <- tibble(Id_agent = agents_f$Id_agent)
@@ -926,7 +931,8 @@ corona_model_agent_based_with_quarantine <- function(agents_f,
                               I_ = sum(agents_f$infectious),
                               Q = sum(agents_f$quarantine), 
                               R = sum(agents_f$removed),
-                              Neuinfektionen = 0)
+                              Neuinfektionen = 0,
+                              Summe_ErkannteFaelle = 0)
   
   # Zeit verfolgen
   tracker_time <- data.frame(time = c())
@@ -992,7 +998,8 @@ corona_model_agent_based_with_quarantine <- function(agents_f,
                        I_ = sum(agents_f$infectious),
                        Q = sum(agents_f$quarantine),
                        R = sum(agents_f$removed),
-                       Neuinfektionen = neuinfektionen)
+                       Neuinfektionen = neuinfektionen,
+                       Summe_ErkannteFaelle = sum(tracker_cases$Neuinfektionen) + neuinfektionen)
     
     tracker_cases <- tracker_cases %>%
       bind_rows(temp)
@@ -1027,6 +1034,66 @@ corona_model_agent_based_with_quarantine <- function(agents_f,
   
 }
 
+# Function for Plotting all results together
+plot_model_results_together <- function(quarantine, agent_status) {
+  
+  #TESTCODE
+  # quarantine <- TRUE
+  # agent_status <- "I"
+  
+  # Liste alles Data frames mit Model in namen
+  liste_von_DataFrames <- names(.GlobalEnv)[grepl("Model", names(.GlobalEnv))]
+  
+  # Waehle ob mit oder ohne Quarantaene
+  if (quarantine == TRUE) {
+    
+    search_word <- "WithQ"
+    
+  } else {
+    
+    search_word <- "WithoutQ"
+    
+  }
+  
+  # Nur jene mit richtigem search-Wort darin
+  liste_von_DataFrames_relevant <- liste_von_DataFrames[grepl(search_word, liste_von_DataFrames)]
+  
+  # Falls kein Dataframe uebrig -> schreiben 
+  if(length(liste_von_DataFrames_relevant) == 0) {
+    
+    cat("Kein Modell dieser Art berechnet!\n")
+    
+  } else {
+    
+    # Hilfsdataframe
+    temp <- data.frame()
+    
+    for (x in liste_von_DataFrames_relevant) {
+      
+      df <- get(x) 
+      
+      df$Model <- x
+      
+      temp <- temp %>%
+        bind_rows(df)
+      
+    }
+    
+  }
+  
+    # Plotten
+  p <- temp %>%
+    filter(type %in% agent_status) %>%
+    ggplot() +
+    aes(x = Tag, y = Wert, color = Model) +
+    geom_line() +
+    facet_wrap(~ type) +
+    theme_bw()
+    
+  print(p)
+  
+}
+
 #---------------------Monte-Carlo-Simulation---------------------
 # Monte Carlo Simulation
 monte_carlo_simulation <- function(agents_ff, 
@@ -1046,11 +1113,7 @@ monte_carlo_simulation <- function(agents_ff,
   # goverment_ff <- goverment
   # times_f <- 5
   
-  neuinfektion <- tibble(Tage = 0:tage_ff)
-  
-  I <- tibble(Tage = 0:tage_ff)
-  
-  Q <- tibble(Tage = 0:tage_ff)
+  results_MonteCarlo <- data.frame()
   
   for (i in 1:times_f) {
     
@@ -1064,11 +1127,10 @@ monte_carlo_simulation <- function(agents_ff,
                                        daten_wsk_f = daten_wsk_ff,
                                        goverment_f = goverment_ff)
       
-      neuinfektion <- neuinfektion %>%
-        mutate({{col_name}} := temp$Neuinfektionen)
+      temp$Durchlauf <- i
       
-      I <- I %>%
-        mutate({{col_name}} := temp$I)
+      results_MonteCarlo <- results_MonteCarlo %>%
+        bind_rows(temp)
       
       cat(paste0(col_name, " von ", times_f, " ist erledigt!\n"))
       
@@ -1081,14 +1143,10 @@ monte_carlo_simulation <- function(agents_ff,
                                                        goverment_f = goverment_ff,
                                                        detection_wsk_per_agent_f = detection_wsk_per_agent_ff)
       
-      neuinfektion <- neuinfektion %>%
-        mutate({{col_name}} := temp$Neuinfektionen)
+      temp$Durchlauf <- i
       
-      I <- I %>%
-        mutate({{col_name}} := temp$I_)
-      
-      Q <- Q %>%
-        mutate({{col_name}} := temp$Q)
+      results_MonteCarlo <- results_MonteCarlo %>%
+        bind_rows(temp)
       
       cat(paste0(col_name, " von ", times_f, " ist erledigt!\n"))
       
@@ -1096,28 +1154,198 @@ monte_carlo_simulation <- function(agents_ff,
     
   }
   
-  neuinfektion <- neuinfektion %>% 
-    select(- Tage) 
-  
-  neuinfektion <- neuinfektion %>%
-    mutate(durchschnitt = rowMeans(neuinfektion))
-  
-  I <- I %>% 
-    select(- Tage)
-  
-  I <- I %>%
-    mutate(durchschnitt = rowMeans(I))
-  
-  Q <- Q %>% 
-    select(- Tage)
-  
-  Q <- Q %>%
-    mutate(durchschnitt = rowMeans(Q))
-  
-  return(list(I = I, Neuinfektion = neuinfektion, Q = Q))
+  return(results_MonteCarlo)
   
 } 
 
+# Durchschnitt und Konfidenzintervalle hinzufuegen
+add_mean_and_ConfInt <- function(daten_MonteCarlo) {
+  
+  #TESTCODE
+  # daten_MonteCarlo <- model_5
+  
+  # Durchschnitt pro Tag und type (S, I, R, ...) berechnen
+  durchschnitt <- daten_MonteCarlo %>%
+    group_by(Tag, type) %>%
+    summarise(Wert = mean(Wert)) %>%
+    ungroup() %>%
+    mutate(Durchlauf = "Schnitt")
+  
+  # Auf Durchlauf auf Character aendern
+  daten_MonteCarlo$Durchlauf <- as.character(daten_MonteCarlo$Durchlauf)
+  
+  # Durchschnitt hinzufuegen
+  daten_MonteCarlo <- daten_MonteCarlo %>%
+    bind_rows(durchschnitt)
+  
+  # confidenz intervalle berechnen
+  ConfIntervall <- daten_MonteCarlo %>%
+    group_by(Tag, type) %>%
+    summarise(durchschnitt = mean(Wert),
+              Anzahl = n(),
+              standardabweichung = sd(Wert)) %>%
+    mutate(t_quantil = qt(0.975, df = Anzahl - 1))
+  
+  ConfIntervall <- ConfIntervall %>%
+    mutate(lower = durchschnitt - t_quantil * standardabweichung/sqrt(Anzahl),
+           upper = durchschnitt + t_quantil * standardabweichung/sqrt(Anzahl))
+  
+  # Confidence interval in die richtige Form bringen
+  ConfIntervall <- ConfIntervall %>%
+    select(c(Tag, type, lower, upper)) %>%
+    pivot_longer(cols = c(lower, upper), names_to = "Durchlauf", values_to = "Wert") 
+  
+  # Zusammenfuegen
+  daten_MonteCarlo <- daten_MonteCarlo %>%
+    bind_rows(ConfIntervall)
+    
+  return(daten_MonteCarlo)
+  
+}
+
+# plot Ergebnisse von MonteCarlo simulation
+plot_result_MonteCarlo <- function(daten_MonteCarlo, agent_status) {
+  
+  temp1 <- daten_MonteCarlo %>%
+    filter(Durchlauf %in% c("Schnitt", "upper", "lower") & type %in% agent_status)
+  
+  temp2 <- daten_MonteCarlo %>%
+    filter(!(Durchlauf %in% c("Schnitt", "upper", "lower")) & type %in% agent_status)
+  
+  p <- ggplot(temp2) + 
+    geom_line(aes(x = Tag, y = Wert, fill = Durchlauf), 
+              color = "lightgrey",
+              show.legend = FALSE) +
+    geom_line(data = temp1, 
+              aes(x = Tag, y = Wert, color = Durchlauf), 
+              show.legend = FALSE) +
+    scale_color_manual(values=c("red", "black", "red")) +
+    theme_bw() +
+    facet_wrap(~ type)
+  
+  print(p)
+  
+}
+
+# Function for Plotting all results together
+plot_MonteCarlo_results_together <- function(quarantine, agent_status, plot_inhalt) {
+  
+  #TESTCODE
+  # quarantine <- TRUE
+  # agent_status <- "I"
+  # plot_inhalt <- "Schnitt"
+  
+  # Liste alles Data frames mit Model in namen
+  liste_von_DataFrames <- names(.GlobalEnv)[grepl("MonteCarlo", names(.GlobalEnv))]
+  
+  # Waehle ob mit oder ohne Quarantaene
+  if (quarantine == TRUE) {
+    
+    search_word <- "WithQ"
+    
+  } else {
+    
+    search_word <- "WithoutQ"
+    
+  }
+  
+  # Nur jene mit richtigem search-Wort darin
+  liste_von_DataFrames_relevant <- liste_von_DataFrames[grepl(search_word, liste_von_DataFrames)]
+  
+  # Falls kein Dataframe uebrig -> schreiben 
+  if(length(liste_von_DataFrames_relevant) == 0) {
+    
+    cat("Kein Modell dieser Art berechnet!\n")
+    
+  } else {
+    
+    # Hilfsdataframe
+    temp <- data.frame()
+    
+    for (x in liste_von_DataFrames_relevant) {
+      
+      df <- get(x) 
+      
+      df$Model <- x
+      
+      temp <- temp %>%
+        bind_rows(df)
+      
+    }
+    
+  }
+  
+  anzahl_durchlaeufe <- length(unique(temp$Durchlauf)) - 3
+  
+  # Plotten
+  p <- temp %>%
+    filter(type %in% agent_status & Durchlauf %in% plot_inhalt) %>%
+    ggplot() +
+    aes(x = Tag, y = Wert, color = Model, fill = Durchlauf) +
+    geom_line() +
+    facet_wrap(~ type) +
+    theme_bw() +
+    labs(color = paste0("Monte-Carlo Simulation mit ", anzahl_durchlaeufe, " Durchlaeufen:"))
+  
+  print(p)
+  
+}
+
+# Teste wie viele Iterationen Monte-Carlo
+test_MonteCarlo_Iteration <- function(sequenz_f, 
+                                      type_of_contactfunctions_f,
+                                      agents_f,
+                                      daten_wsk_f,
+                                      tage_f,
+                                      detection_wsk_per_agent_f,
+                                      goverment_f,
+                                      quarantine_f) {
+  
+  MonteCarlo <- tibble()
+  
+  for (i in sequenz_f) {
+    
+    temp1 <- monte_carlo_simulation(agents_ff = agents_f,
+                                    tage_ff = tage_f,
+                                    type_of_contactfunctions_ff = type_of_contactfunctions_f,
+                                    daten_wsk_ff = daten_wsk_f,
+                                    goverment_ff = goverment_f,
+                                    times_f = i,
+                                    detection_wsk_per_agent_ff = detection_wsk_per_agent_f,
+                                    quarantine = quarantine_f)
+    
+    temp1 <- add_mean_and_ConfInt(temp1)
+    
+    temp1$MonteCarlo_Iterationen <- as.character(i)
+    
+    MonteCarlo <- MonteCarlo %>%
+      bind_rows(temp1)
+    
+    print(head(temp1))
+    print(paste0("Iterationen:", i))
+    
+  }
+  
+  return(MonteCarlo)
+  
+}
+
+# plot MonteCarlo Test Iterationen
+plot_MonteCarloTest_together <- function(daten_MonteCarloTest,
+                                         durchlauf_type, 
+                                         agent_status) {
+  
+  p <- daten_MonteCarloTest %>%
+    filter(Durchlauf %in% durchlauf_type & type %in% agent_status) %>%
+    ggplot() +
+    aes(x = Tag, y = Wert, color = MonteCarlo_Iterationen, fill = Durchlauf) +
+    geom_line() +
+    theme_bw() +
+    facet_wrap(~ type)
+  
+  print(p)
+  
+}
 
 #----------------------------------------------------------------
 #----------------------------------------------------------------
