@@ -79,7 +79,7 @@ ggplotly(p)
 real_daten_Melk_relevant <- real_daten_Melk %>%
   filter(Datum >= as.Date("2020-03-14") & Datum <= as.Date("2020-03-27"))
 
-#TESTPLOT
+# #TESTPLOT
 # ggplot(real_daten_Melk_relevant) +
 #   aes(x = Datum, y = AnzahlFaelleSum) +
 #   geom_line()
@@ -110,8 +110,8 @@ goverment <- data.frame(Tag = 1:15,
                         Lockdown = c(rep(FALSE,15)))
 
 # erster Versuch die Daten anzupassen 
-# beginnen mit 5 infectioese Agents 
-agents_for_realData <- gesundheit_erstellen(agents, 15)
+# beginnen mit 20 infectioese Agents 
+agents_for_realData <- gesundheit_erstellen(agents, 20)
 
 Summe_ErkannteFaelle_DieserDurchgang <- 0
 tag <- 1
@@ -149,12 +149,13 @@ agents_for_fitting <- fitting_test$AG
 zeiten_for_fitting <- fitting_test$ZE
 tracker_from_fitting <- fitting_test$TR
 
-save(agents_for_fitting, zeiten_for_fitting, tracker_from_fitting,
-     file = "agents_initialisierung_ForFitting_FirstTry.RData")
+# save(agents_for_fitting, zeiten_for_fitting, tracker_from_fitting,
+#      file = "agents_initialisierung_ForFitting_20Agents_2022_02_14.RData")
+# load("agents_initialisierung_ForFitting_FirstTry.RData")
 
 first_try <- 
   monte_carlo_simulation_ForFitting(agents_ff = agents_for_fitting,
-                                    tage_ff = 14,
+                                    tage_ff = 9,
                                     times_f = 5,
                                     type_of_contactfunctions_ff = type_of_contactfunctions,
                                     daten_wsk_ff = daten_wsk,
@@ -175,20 +176,19 @@ upper_fitting <- first_try_schnitt %>%
   filter(Durchlauf %in% c("upper") & type == "Summe_ErkannteFaelle")
 
 ggplot() +
-  aes(x = exp_growth$Datum[1:15]) +
+  aes(x = exp_growth$Datum[1:10]) +
   geom_line(aes(y = Wert), data = schnitt_fitting) +
-  geom_point(aes( y = y_test[1:15])) +
+  geom_point(aes( y = y_test[1:10])) +
   geom_line(aes(y = Wert), data = lower_fitting, color = "red") +
   geom_line(aes(y = Wert), data = upper_fitting, color = "red")
 
 
 #----------------------------------------------------------------
 
-load("agents_initialisierung_ForFitting_FirstTry.RData")
+load("agents_initialisierung_ForFitting_20Agents_2022_02_14.RData")
 
 goverment <- data.frame(Tag = 1:15,
                         Lockdown = c(rep(FALSE,15)))
-
 
 for (i in seq(0.05, 0.1, 0.01)) {
   
@@ -221,20 +221,26 @@ for (i in seq(0.05, 0.1, 0.01)) {
   vergleich <- vergleich %>%
     mutate(difference = Wert - AnzahlFaelleSum)
   
-  print(paste0("Summe der Differenzen: ", sum(vergleich$difference)))
+  print(paste0("Summe der Differenzen: ", sum(vergleich$difference), " Prozent: ", i))
+  
+  p <- ggplot(vergleich) +
+    aes(x = Tag) +
+    geom_point(aes(y = AnzahlFaelleSum)) +
+    geom_line(aes(y = Wert))
+  
+  print(p)
   
 }
 
-ggplot(vergleich) +
-  aes(x = Tag) +
-  geom_point(aes(y = AnzahlFaelleSum)) +
-  geom_line(aes(y = Wert))
-  
 
+#---------------------------------------------------------------- 
 
+goverment <- data.frame(Tag = 1:100,
+                        Lockdown = c(rep(FALSE,100)))
 
+prognose_ohne_lockdown <- 
   monte_carlo_simulation_ForFitting(agents_ff = agents_for_fitting,
-                                    tage_ff = 5,
+                                    tage_ff = 30,
                                     times_f = 5,
                                     type_of_contactfunctions_ff = type_of_contactfunctions,
                                     daten_wsk_ff = daten_wsk,
@@ -243,10 +249,50 @@ ggplot(vergleich) +
                                     quarantine = TRUE,
                                     zeiten_ff = zeiten_for_fitting,
                                     wsk_infection_hh_ff = 0.25,
-                                    wsk_infection_other_ff = 0.05
+                                    wsk_infection_other_ff = 0.07
                                     )
 
+prognose_ohne_lockdown <- add_mean_and_ConfInt(prognose_ohne_lockdown)
+
+real_daten_Melk_test <- real_daten_Melk %>%
+  filter(Datum >= as.Date("2020-03-14") & Datum <= as.Date("2020-03-27"))
+  
+
+schnitt <- prognose_ohne_lockdown %>%
+  filter(type == "Summe_ErkannteFaelle" & Durchlauf %in% c("Schnitt") & Tag < 14) 
+
+upper <- prognose_ohne_lockdown %>%
+  filter(type == "Summe_ErkannteFaelle" & Durchlauf %in% c("upper") & Tag < 14) 
+
+lower <- prognose_ohne_lockdown %>%
+  filter(type == "Summe_ErkannteFaelle" & Durchlauf %in% c("lower") & Tag < 14) 
+
+ggplot(schnitt) +
+  aes(x = Tag) +
+  geom_line(aes(y = Wert)) +
+  geom_line(aes(y = lower$Wert), color = "red") +
+  geom_line(aes(y = upper$Wert), color = "red") +
+  geom_point(aes(y = real_daten_Melk_test$AnzahlFaelleSum))
+  #facet_wrap(~type)
+
+real_daten_Melk_test <- real_daten_Melk %>%
+  filter(Datum >= as.Date("2020-03-14") & Datum <= as.Date("2020-04-01"))
 
 
+schnitt <- prognose_ohne_lockdown %>%
+  filter(type == "Summe_ErkannteFaelle" & Durchlauf %in% c("Schnitt") & Tag < 19) 
 
+upper <- prognose_ohne_lockdown %>%
+  filter(type == "Summe_ErkannteFaelle" & Durchlauf %in% c("upper") & Tag < 19) 
+
+lower <- prognose_ohne_lockdown %>%
+  filter(type == "Summe_ErkannteFaelle" & Durchlauf %in% c("lower") & Tag < 19) 
+
+ggplot(schnitt) +
+  aes(x = Tag) +
+  geom_line(aes(y = Wert)) +
+  geom_line(aes(y = lower$Wert), color = "red") +
+  geom_line(aes(y = upper$Wert), color = "red") +
+  geom_point(aes(y = real_daten_Melk_test$AnzahlFaelleSum))
+  #facet_wrap(~type)
 
