@@ -3,6 +3,7 @@ library(jsonlite)
 library(readxl)
 library(osmdata)
 library(sf)
+library(gridExtra)
 
 source("./scripts/function_initialisierung.R")
 
@@ -30,6 +31,22 @@ infos_mumicipality <-
 wsk_between_centre <- pendelwsk_berechnen(infos_mumicipality, 
                                           distance_between_centre, 
                                           bezirkswahl = district_number)
+
+# Fuer Arbeit einen Ausschnitt des Data Frames generieren
+table_matrix <- wsk_between_centre %>% 
+  arrange(centre_j) %>%
+  pivot_wider(names_from = centre_j, values_from = wsk) %>%
+  arrange(centre_i) %>%
+  select(1:5) %>%
+  slice(1:4)
+
+table_matrix <- round(table_matrix, digits = 3)
+
+png("/Users/danielkaras/Desktop/Masterarbeit/Latex_Template/Plots_und_Logos/Pendelmatrix.png", 
+    height = 25*nrow(table_matrix), 
+    width = 100*ncol(table_matrix))
+grid.table(table_matrix)
+dev.off()
 
 # # Bezirk Melk beginnt immer mit 315 -> "^315"
 # district <- "315" # Id fuer Melk
@@ -145,6 +162,17 @@ agents <- schulen_zuweisen(agents, infos_mumicipality, schulplaetze, wsk_between
 infos_mumicipality <- kindergartendaten_hinzufuegen(infos_mumicipality)
 kindergartenplaetze <- kindergartenplaetze_erstellen(infos_mumicipality)
 agents <- kindergarten_zuweisen(agents, infos_mumicipality, kindergartenplaetze, wsk_between_centre)
+
+
+table_agents <- agents %>%
+  group_by(type_of_work) %>%
+  sample_n(1)
+
+png("/Users/danielkaras/Desktop/Masterarbeit/Latex_Template/Plots_und_Logos/AgentsInitialisierung.png", 
+    height = 25*nrow(table_agents), 
+    width = 100*ncol(table_agents))
+grid.table(table_agents)
+dev.off()
 
 #----------------------Speichern der Agents----------------------
 

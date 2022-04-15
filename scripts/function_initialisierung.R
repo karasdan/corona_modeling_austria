@@ -43,11 +43,12 @@ bezirksdaten_sehen <- function(speichern = FALSE){
 }
 
 # OSM Data verwenden fuer Distanz berechnen
-distance_aus_OSM_daten_berechnen <- function(district_name_f, district_number_f) {
+distance_aus_OSM_daten_berechnen <- function(district_name_f, district_number_f, save_plot = FALSE) {
   
   #TESTCODE
   # district_name_f <- district_name
   # district_number_f <- district_number
+  # save_plot <- TRUE
   
   # Bezirksname definieren
   district_name_f <- paste0("Bezirk ", district_name_f)
@@ -80,10 +81,6 @@ distance_aus_OSM_daten_berechnen <- function(district_name_f, district_number_f)
   # id hinzufuegen
   centre$Id <- 1:max(nrow(centre))
   
-  # ggplot() +
-  #   geom_sf(data = melk_municipality_boundary) +
-  #   geom_sf(data = centre)
-  
   # Straßen extrahieren
   melk_road <- opq(melk_bbox) %>%
     add_osm_feature(key = "highway") %>%
@@ -95,10 +92,29 @@ distance_aus_OSM_daten_berechnen <- function(district_name_f, district_number_f)
   melk_road_data <- melk_road_data %>%
     select(osm_id, highway, geometry)
   
-  # ggplot() +
-  #   geom_sf(data = melk_municipality_boundary, aes(color = name), show.legend = FALSE) +
-  #   geom_sf(data = melk_road_data)
-
+  if (save_plot == TRUE){
+    
+    p1 <- ggplot() +
+      geom_sf(data = melk_municipality_boundary, 
+              fill = "white",
+              color = "black") +
+      geom_sf(data = centre, color = "blue", size = 1) +
+      theme_void()
+    
+    p2 <- ggplot() +
+      geom_sf(data = melk_municipality_boundary, 
+              color = "black", 
+              show.legend = FALSE, 
+              fill = "white",
+              size = 1) +
+      geom_sf(data = melk_road_data, color = "lightgrey") +
+      theme_void()
+    
+    picture <- arrangeGrob(p1, p2, nrow = 1)
+    ggsave(filename = "/Users/danielkaras/Desktop/Masterarbeit/Latex_Template/Plots_und_Logos/Bezirksgrenzen.png", picture)
+    
+  }
+  
   # Gewichteten Graphen aus Straßennetz machen -> Mit Auto
   g <- dodgr::weight_streetnet(melk_road_data, wt_profile = "motorcar")
   
@@ -246,7 +262,7 @@ pendelwsk_berechnen <- function(daten_info,
   # Jetzt Faktor c_i berechnen
   temp3 <- temp3 %>%
     group_by(centre_i) %>%
-    summarise(c_i = sum(Anzahl_rel/distance_new)) 
+    summarise(c_i = sum(Anzahl_rel/distance)) 
   
   # Wieder joinen nur jetzt ueber centre_i
   daten_distanzen <- daten_distanzen %>%

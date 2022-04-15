@@ -183,7 +183,8 @@ kontakte_erstellen_haushalt <- function(daten_agent, daten_kontakte) {
 kontakte_erstellen_freizeit <- function(daten_agent, 
                                         daten_kontakte, 
                                         wsk,
-                                        daten_goverment) {
+                                        daten_goverment,
+                                        division_kontakte_f = 0.25) {
   
   #TESTCODE
   # daten_agent <- agents_basic_model
@@ -191,7 +192,7 @@ kontakte_erstellen_freizeit <- function(daten_agent,
   # wsk <- daten_wsk
   # daten_goverment <- goverment_day
   
-  if (daten_goverment$Lockdown == FALSE) {
+  if (daten_goverment$Lockdown == FALSE & daten_goverment$leisure_contact_reduction == FALSE) {
     
     # Anzahl an Kontakten fuer alle Agents erstellen
     kontakte <- data.frame(Id_agent = daten_agent$Id_agent, 
@@ -202,7 +203,7 @@ kontakte_erstellen_freizeit <- function(daten_agent,
     # Anzahl an Kontakten fuer alle Agents erstellen 
     # -> hier einfach mal 1 genommen ohne irgendeiner Referenz
     kontakte <- data.frame(Id_agent = daten_agent$Id_agent, 
-                           contacts = round(rgamma(length(daten_agent$Id_agent),1,1)))
+                           contacts = round(rgamma(length(daten_agent$Id_agent),6.11,1) * division_kontakte_f))
     
   }
   
@@ -256,11 +257,12 @@ kontakte_erstellen_freizeit <- function(daten_agent,
 }
 
 # Arbeitsplatzkontakte erstellen
-kontakte_erstellen_arbeitsplatz <- function(daten_agent, daten_kontakte) {
+kontakte_erstellen_arbeitsplatz <- function(daten_agent, daten_kontakte, goverment_day_f) {
   
   #TESTCODE
   # daten_agent <- agents_basic_model
   # daten_kontakte <- contacts
+  # goverment_day_f <- goverment_day
   
   working_agents <- daten_agent %>%
     filter(type_of_work == "work")
@@ -268,9 +270,20 @@ kontakte_erstellen_arbeitsplatz <- function(daten_agent, daten_kontakte) {
   working_agents_in_district <- working_agents %>%
     filter(Id_municipality_work != 99999)
   
-  # Anzahl an Kontakten fuer alle Agents erstellen
-  kontakte <- data.frame(Id_agent = working_agents_in_district$Id_agent, 
-                         contacts = round(rgamma(length(working_agents_in_district$Id_agent),5.28,1)))
+  if (goverment_day_f$Lockdown == TRUE | goverment_day_f$home_office == TRUE) {
+    
+    # Anzahl an Arbeitskontakte bei Home Office
+    kontakte <- data.frame(Id_agent = working_agents_in_district$Id_agent, 
+                           contacts = 0)
+    
+  } else {
+    
+    # Anzahl an Kontakten fuer alle Agents erstellen
+    kontakte <- data.frame(Id_agent = working_agents_in_district$Id_agent, 
+                           contacts = round(rgamma(length(working_agents_in_district$Id_agent),5.28,1)))
+    
+    
+  }
   
   # Arbeit + darin arbeitende Agents
   work_with_agent <- working_agents_in_district %>%
@@ -312,11 +325,12 @@ kontakte_erstellen_arbeitsplatz <- function(daten_agent, daten_kontakte) {
 }
 
 # Kontakte fuer Volksschule erstellen 
-kontakte_erstellen_volksschule <- function(daten_agent, daten_kontakte) {
+kontakte_erstellen_volksschule <- function(daten_agent, daten_kontakte, goverment_day_f) {
   
   #TESTCODE
   # daten_agent <- agents_basic_model
   # daten_kontakte <- contacts
+  # goverment_day_f <- goverment_day
   
   primary_school_agents <- daten_agent %>%
     filter(type_of_work == "primary_school")
@@ -324,9 +338,18 @@ kontakte_erstellen_volksschule <- function(daten_agent, daten_kontakte) {
   primary_school_agents_in_district <- primary_school_agents %>%
     filter(Id_municipality_work != 99999)
   
-  # Anzahl an Kontakten fuer alle Agents erstellen
-  kontakte <- data.frame(Id_agent = primary_school_agents_in_district$Id_agent, 
-                         contacts = round(rgamma(length(primary_school_agents_in_district$Id_agent),4.64,1)))
+  if (goverment_day_f$Lockdown == TRUE | goverment_day_f$primary_school_closed == TRUE) {
+    
+    kontakte <- data.frame(Id_agent = primary_school_agents_in_district$Id_agent, 
+                           contacts = 0)
+    
+  } else {
+    
+    # Anzahl an Kontakten fuer alle Agents erstellen
+    kontakte <- data.frame(Id_agent = primary_school_agents_in_district$Id_agent, 
+                           contacts = round(rgamma(length(primary_school_agents_in_district$Id_agent),4.64,1)))
+    
+  }
   
   # Arbeit + darin arbeitende Agents
   school_with_agent <- primary_school_agents_in_district %>%
@@ -368,11 +391,12 @@ kontakte_erstellen_volksschule <- function(daten_agent, daten_kontakte) {
 }
 
 # Kontakte fuer restliche Schule erstellen 
-kontakte_erstellen_schule <- function(daten_agent, daten_kontakte) {
+kontakte_erstellen_schule <- function(daten_agent, daten_kontakte, goverment_day_f) {
   
   #TESTCODE
   # daten_agent <- agents_basic_model
   # daten_kontakte <- contacts
+  # goverment_day_f <- goverment_day
   
   high_school_agents <- daten_agent %>%
     filter(type_of_work == "school")
@@ -380,9 +404,18 @@ kontakte_erstellen_schule <- function(daten_agent, daten_kontakte) {
   high_school_agents_in_district <- high_school_agents %>%
     filter(Id_municipality_work != 99999)
   
-  # Anzahl an Kontakten fuer alle Agents erstellen
-  kontakte <- data.frame(Id_agent = high_school_agents_in_district$Id_agent, 
-                         contacts = round(rgamma(length(high_school_agents_in_district$Id_agent),4.64,1)))
+  if (goverment_day_f$Lockdown == TRUE | goverment_day_f$school_closed == TRUE) {
+    
+    kontakte <- data.frame(Id_agent = high_school_agents_in_district$Id_agent, 
+                           contacts = 0)
+    
+  } else {
+    
+    # Anzahl an Kontakten fuer alle Agents erstellen
+    kontakte <- data.frame(Id_agent = high_school_agents_in_district$Id_agent, 
+                           contacts = round(rgamma(length(high_school_agents_in_district$Id_agent),4.64,1)))
+    
+  }
   
   # Arbeit + darin arbeitende Agents
   school_with_agent <- high_school_agents_in_district %>%
@@ -424,11 +457,12 @@ kontakte_erstellen_schule <- function(daten_agent, daten_kontakte) {
 }
 
 # Kontakte fuer Kindergarten erstellen 
-kontakte_erstellen_kindergarten <- function(daten_agent, daten_kontakte) {
+kontakte_erstellen_kindergarten <- function(daten_agent, daten_kontakte, goverment_day_f) {
   
   #TESTCODE
   # daten_agent <- agents_basic_model
   # daten_kontakte <- contacts
+  # goverment_day_f <- goverment_day
   
   kindergarden_agents <- daten_agent %>%
     filter(type_of_work == "kindergarden")
@@ -436,9 +470,18 @@ kontakte_erstellen_kindergarten <- function(daten_agent, daten_kontakte) {
   kindergarden_agents_in_district <- kindergarden_agents %>%
     filter(Id_municipality_work != 99999)
   
-  # Anzahl an Kontakten fuer alle Agents erstellen; 4.64 muss man noch hinterfragen -> vl anders
-  kontakte <- data.frame(Id_agent = kindergarden_agents_in_district$Id_agent, 
-                         contacts = round(rgamma(length(kindergarden_agents_in_district$Id_agent),4.64,1)))
+  if (goverment_day_f$Lockdown == TRUE | goverment_day_f$kindergarden_closed == TRUE) {
+    
+    kontakte <- data.frame(Id_agent = kindergarden_agents_in_district$Id_agent, 
+                           contacts = 0)
+    
+  } else {
+    
+    # Anzahl an Kontakten fuer alle Agents erstellen
+    kontakte <- data.frame(Id_agent = kindergarden_agents_in_district$Id_agent, 
+                           contacts = round(rgamma(length(kindergarden_agents_in_district$Id_agent),4.64,1)))
+    
+  }
   
   # Arbeit + darin arbeitende Agents
   kindergarden_with_agent <- kindergarden_agents_in_district %>%
@@ -906,7 +949,8 @@ corona_model_agent_based_with_quarantine <- function(agents_f,
                                                      daten_wsk_f,
                                                      goverment_f,
                                                      detection_wsk_per_agent_f,
-                                                     plotting = FALSE){
+                                                     plotting = FALSE,
+                                                     division_kontakte_ff = 0.25){
   
   #TESTCODE
   # agents_f <- agents
@@ -960,16 +1004,31 @@ corona_model_agent_based_with_quarantine <- function(agents_f,
       temp_func <- get(funktion)
       
       if (grepl("freizeit", funktion) == TRUE) {
-        
-        contacts <- temp_func(agents_not_quarantine, contacts, daten_wsk_f, goverment_day)
-        
+
+        contacts <- temp_func(agents_not_quarantine, contacts, daten_wsk_f, goverment_day, division_kontakte_ff)
+
+      } else if (grepl("haushalt", funktion) == TRUE) {
+
+        contacts <- temp_func(agents_not_quarantine, contacts)
+
       } else {
         
-        contacts <- temp_func(agents_not_quarantine, contacts)
+        contacts <- temp_func(agents_not_quarantine, contacts, goverment_day)
         
       }
       
     }
+    
+    # EINKOMMENTIEREN BEI BILDSPEICHERUNG
+    # table_contact <- contacts %>%
+    #   group_by(type_of_contact) %>%
+    #   sample_n(1)
+    # 
+    # png("/Users/danielkaras/Desktop/Masterarbeit/Latex_Template/Plots_und_Logos/AgentContacts.png", 
+    #     height = 25*nrow(table_contact), 
+    #     width = 100*ncol(table_contact))
+    # gridExtra::grid.table(table_contact)
+    # dev.off()
     
     # Infected Status aendern
     agents_f <- infected_status_aendern_mit_quarantine(agents_f, contacts)
@@ -1103,7 +1162,8 @@ monte_carlo_simulation <- function(agents_ff,
                                    goverment_ff,
                                    detection_wsk_per_agent_ff,
                                    times_f,
-                                   quarantine) {
+                                   quarantine,
+                                   division_kontakte_fff = 0.25) {
   
   #TESTCODE
   # agents_ff <- agents
@@ -1141,7 +1201,8 @@ monte_carlo_simulation <- function(agents_ff,
                                                        type_of_contactfunctions_f = type_of_contactfunctions_ff,
                                                        daten_wsk_f = daten_wsk_ff,
                                                        goverment_f = goverment_ff,
-                                                       detection_wsk_per_agent_f = detection_wsk_per_agent_ff)
+                                                       detection_wsk_per_agent_f = detection_wsk_per_agent_ff,
+                                                       division_kontakte_ff = division_kontakte_fff)
       
       temp$Durchlauf <- i
       
@@ -1335,15 +1396,42 @@ plot_MonteCarloTest_together <- function(daten_MonteCarloTest,
                                          durchlauf_type, 
                                          agent_status) {
   
-  p <- daten_MonteCarloTest %>%
-    filter(Durchlauf %in% durchlauf_type & type %in% agent_status) %>%
-    ggplot() +
-    aes(x = Tag, y = Wert, color = MonteCarlo_Iterationen, fill = Durchlauf) +
-    geom_line() +
-    theme_bw() +
-    facet_wrap(~ type)
+  if (length(agent_status) == 1) {
+    
+    plot_title <- switch (agent_status,
+                          "S" = {"Mögliche Agents"},
+                          "I_" = {"Infektiös"},
+                          "I" = {"Infiziert"},
+                          "Q" = {"In Quarantäne"},
+                          "R" = {"Immun"},
+                          "Neuinfektionen" = {"Neuinfektionen"},
+                          "Summe_ErkannteFaelle" = {"Summe aller Neuinfektionen"}
+    )
+    
+    p <- daten_MonteCarloTest %>%
+      filter(Durchlauf %in% durchlauf_type & type %in% agent_status) %>%
+      ggplot() +
+      aes(x = Tag, y = Wert, color = factor(MonteCarlo_Iterationen, levels = c("5", "10", "15", "20")), fill = Durchlauf) +
+      geom_line() +
+      theme_bw() +
+      labs(color = "Iterationen") +
+      ggtitle(plot_title) +
+      theme(plot.title = element_text(hjust = 0.5))
+    
+  } else {
+    
+    p <- daten_MonteCarloTest %>%
+      filter(Durchlauf %in% durchlauf_type & type %in% agent_status) %>%
+      ggplot() +
+      aes(x = Tag, y = Wert, color = factor(MonteCarlo_Iterationen, levels = c("5", "10", "15", "20")), fill = Durchlauf) +
+      geom_line() +
+      theme_bw() +
+      labs(color = "Iterationen") +
+      facet_wrap(~ type)
+    
+  }
   
-  print(p)
+  return(p)
   
 }
 

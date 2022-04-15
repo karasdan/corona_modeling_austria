@@ -2,6 +2,38 @@
 # Functions laden
 source("function_modellierung.R")
 
+#----------------------------------------------------------------
+
+test_doubling_time <- function(Real_Daten_selected_f, 
+                               Predict_Daten_seleceted_f, 
+                               abTag_f,
+                               bisTag_f){
+  
+  temp_doublingtimes <- c()
+  
+  for (i in abTag_f:(bisTag_f - 3)){
+    
+    # Zusammenfuegen 
+    temp_ForDoublingTime <- Predict_Daten_seleceted_f %>%
+      left_join(Real_Daten_selected_f, by = "Tag") %>%
+      filter(Tag >= i & Tag < i + 4)
+    
+    Exp_fit_real <- 
+      nls(AnzahlFaelleSum ~ a0 * exp(r * Tag), data = temp_ForDoublingTime, start = list(a0 = 0.5, r = 0.2))
+    Exp_fit_predict <- 
+      nls(Wert ~ a0 * exp(r * Tag), data = temp_ForDoublingTime, start = list(a0 = 0.5, r = 0.2))
+    
+    doubling_time_Real <- log(2)/as.numeric(coef(Exp_fit_real)[2])
+    doubling_time_Predict <- log(2)/as.numeric(coef(Exp_fit_predict)[2])
+    
+    temp_doublingtimes <- c(temp_doublingtimes, (doubling_time_Real - doubling_time_Predict)^2)
+    
+  }
+  
+  return(sum(temp_doublingtimes))
+  
+}
+
 #-----------------------Fitting Real Daten-----------------------
 
 # Startwerte bezueglich Infektion waehlen!
@@ -91,7 +123,8 @@ corona_model_agent_based_with_quarantine_ForFitting <- function(agents_f,
                                                                 wsk_infection_hh_f = 0.25,
                                                                 wsk_infection_other_f = 0.05,
                                                                 zeiten_f = NULL,
-                                                                plotting = FALSE){
+                                                                plotting = FALSE,
+                                                                division_kontakte_ff = 0.25){
   
   #TESTCODE
   # agents_f <- agents
@@ -154,15 +187,36 @@ corona_model_agent_based_with_quarantine_ForFitting <- function(agents_f,
       
       if (grepl("freizeit", funktion) == TRUE) {
         
-        contacts <- temp_func(agents_not_quarantine, contacts, daten_wsk_f, goverment_day)
+        contacts <- temp_func(agents_not_quarantine, contacts, daten_wsk_f, goverment_day, 
+                              division_kontakte_f = division_kontakte_ff)
+        
+      } else if (grepl("haushalt", funktion) == TRUE) {
+        
+        contacts <- temp_func(agents_not_quarantine, contacts)
         
       } else {
         
-        contacts <- temp_func(agents_not_quarantine, contacts)
+        contacts <- temp_func(agents_not_quarantine, contacts, goverment_day)
         
       }
       
     }
+    
+    # for (funktion in kontakt_functions) {
+    #   
+    #   temp_func <- get(funktion)
+    #   
+    #   if (grepl("freizeit", funktion) == TRUE) {
+    #     
+    #     contacts <- temp_func(agents_not_quarantine, contacts, daten_wsk_f, goverment_day)
+    #     
+    #   } else {
+    #     
+    #     contacts <- temp_func(agents_not_quarantine, contacts)
+    #     
+    #   }
+    #   
+    # }
     
     # Infected Status aendern
     agents_f <- infected_status_aendern_mit_quarantine(agents_f, contacts,
@@ -246,7 +300,8 @@ monte_carlo_simulation_ForFitting <- function(agents_ff,
                                               zeiten_ff = NULL,
                                               quarantine,
                                               wsk_infection_hh_ff = 0.25,
-                                              wsk_infection_other_ff = 0.05) {
+                                              wsk_infection_other_ff = 0.05,
+                                              division_kontakte_fff = 0.25) {
   
   #TESTCODE
   # agents_ff <- agents
@@ -287,7 +342,8 @@ monte_carlo_simulation_ForFitting <- function(agents_ff,
                                                                   detection_wsk_per_agent_f = detection_wsk_per_agent_ff,
                                                                   zeiten_f = zeiten_ff,
                                                                   wsk_infection_hh_f = wsk_infection_hh_ff,
-                                                                  wsk_infection_other_f = wsk_infection_other_ff)
+                                                                  wsk_infection_other_f = wsk_infection_other_ff,
+                                                                  division_kontakte_ff = division_kontakte_fff)
       
       temp <- temp$TR
       

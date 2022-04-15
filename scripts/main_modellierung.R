@@ -7,8 +7,8 @@ library(data.table)
 # Voreinstellungen
 district <- "Melk" # Welcher Bezirk?
 district_number <- 315 # Welche Nummer
-tage <- 5 # Wie viele Tage?
-times <- 5 # Wie viele WH bei Monte-Carlo-Simulation?
+tage <- 50 # Wie viele Tage?
+times <- 10 # Wie viele WH bei Monte-Carlo-Simulation?
 
 # Switch je nach Bezirk
 switch(district,
@@ -39,7 +39,14 @@ agents_without_quarantine <- agents %>%
 
 # Goverment erstellen
 goverment <- data.frame(Tag = 1:tage,
-                        Lockdown = c(rep(FALSE,tage)))
+                        Lockdown = c(rep(FALSE,tage)),
+                        leisure_contact_reduction = (rep(FALSE,tage)),
+                        home_office = c(rep(FALSE,tage)),
+                        primary_school_closed = c(rep(FALSE,tage)),
+                        kindergarden_closed = c(rep(FALSE,tage)),
+                        school_closed = c(rep(FALSE,tage)))
+
+goverment$Lockdown[6:tage] <- TRUE
 
 # Lockdown von Tag 25 - 35
 # goverment <- goverment %>%
@@ -77,6 +84,12 @@ Model_All_WithQ <-
                                            detection_wsk_per_agent_f = detection_wsk_per_agent,
                                            plotting = TRUE)
 
+#TESTPLOT
+# Model_All_WithQ %>%
+#   filter(type == "Summe_ErkannteFaelle") %>%
+#   ggplot() +
+#   aes(x = Tag) +
+#   geom_line(aes(y = Wert))
 
 #---Modell ohne Kontakte im Kindergarten (with and without Q)----
 
@@ -199,8 +212,8 @@ plot_model_results_together(quarantine = FALSE,
 
 #-----------Monte Carlo alle Kontakte (mit Quarantaene)----------
 
-tage <- 5 # Wie viele Tage?
-times <- 5
+tage <- 50 # Wie viele Tage?
+times <- 15
 
 # Kontaktzusammensetzung
 type_of_contactfunctions <- c("freizeit",  
@@ -361,13 +374,711 @@ test_monte_carlo <-
                             detection_wsk_per_agent_f = detection_wsk_per_agent,
                             quarantine_f = TRUE)
 
+plot <- plot_MonteCarloTest_together(daten_MonteCarloTest = test_monte_carlo, 
+                             durchlauf_type = c("Schnitt"),
+                             agent_status = c("Summe_ErkannteFaelle"))
+
+ggsave("plots/MonteCarloTest_SummeAllerNeuinfektionen.png", plot = plot)
+ggsave("/Users/danielkaras/Desktop/Masterarbeit/Latex_Template/Plots_und_Logos/MonteCarloTest_SummeAllerNeuinfektionen.png", 
+       plot = plot)
+
 plot_MonteCarloTest_together(daten_MonteCarloTest = test_monte_carlo, 
                              durchlauf_type = c("Schnitt"),
                              agent_status = c("I_"))
 
 plot_MonteCarloTest_together(daten_MonteCarloTest = test_monte_carlo, 
                              durchlauf_type = c("Schnitt"),
+                             agent_status = c("Neuinfektionen"))
+
+
+
+plot_MonteCarloTest_together(daten_MonteCarloTest = test_monte_carlo, 
+                             durchlauf_type = c("Schnitt"),
                              agent_status = c("S"))
+
+#----------------------Resultate berechnen-----------------------
+
+# Globale Einstellungen
+tage <- 50 # Wie viele Tage?
+times <- 15
+
+# Kontaktzusammensetzung
+type_of_contactfunctions <- c("freizeit",  
+                              "haushalt", 
+                              "arbeitsplatz", 
+                              "volksschule", 
+                              "schule", 
+                              "kindergarten")
+
+# Goverment erstellen
+goverment <- data.frame(Tag = 1:tage,
+                        Lockdown = c(rep(FALSE,tage)),
+                        leisure_contact_reduction = (rep(FALSE,tage)),
+                        home_office = c(rep(FALSE,tage)),
+                        primary_school_closed = c(rep(FALSE,tage)),
+                        kindergarden_closed = c(rep(FALSE,tage)),
+                        school_closed = c(rep(FALSE,tage)))
+
+# MonteCarlo mit Lockdown 
+MonteCarlo_All_Nothing <- 
+  monte_carlo_simulation(agents_ff = agents,
+                         tage_ff = tage,
+                         type_of_contactfunctions_ff = type_of_contactfunctions,
+                         daten_wsk_ff = daten_wsk,
+                         goverment_ff = goverment,
+                         times_f = times,
+                         detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                         quarantine = TRUE)
+
+MonteCarlo_All_Nothing <- add_mean_and_ConfInt(MonteCarlo_All_Nothing)
+
+setwd("./results_data")
+save(MonteCarlo_All_Nothing, file = "MonteCarlo_All_Nothing.RData")
+setwd("..")
+
+plot_result_MonteCarlo(MonteCarlo_All_Nothing, agent_status = c("Neuinfektionen","I"))
+plot_result_MonteCarlo(MonteCarlo_All_Nothing, agent_status = c("I_", "I", "Q"))
+
+# Goverment erstellen
+goverment <- data.frame(Tag = 1:tage,
+                        Lockdown = c(rep(FALSE,tage)),
+                        leisure_contact_reduction = (rep(FALSE,tage)),
+                        home_office = c(rep(FALSE,tage)),
+                        primary_school_closed = c(rep(FALSE,tage)),
+                        kindergarden_closed = c(rep(FALSE,tage)),
+                        school_closed = c(rep(FALSE,tage)))
+
+goverment$Lockdown[21:40] <- TRUE
+
+# MonteCarlo mit Lockdown 
+MonteCarlo_All_Lockdown <- 
+  monte_carlo_simulation(agents_ff = agents,
+                         tage_ff = tage,
+                         type_of_contactfunctions_ff = type_of_contactfunctions,
+                         daten_wsk_ff = daten_wsk,
+                         goverment_ff = goverment,
+                         times_f = times,
+                         detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                         quarantine = TRUE)
+
+MonteCarlo_All_Lockdown <- add_mean_and_ConfInt(MonteCarlo_All_Lockdown)
+
+setwd("./results_data")
+save(MonteCarlo_All_Lockdown, file = "MonteCarlo_All_Lockdown.RData")
+setwd("..")
+
+plot_result_MonteCarlo(MonteCarlo_All_Lockdown, agent_status = c("Neuinfektionen","I"))
+plot_result_MonteCarlo(MonteCarlo_All_Lockdown, agent_status = c("I_", "I", "Q"))
+plot_result_MonteCarlo(MonteCarlo_All_Lockdown, agent_status = c("Summe_ErkannteFaelle"))
+
+# Goverment erstellen
+goverment <- data.frame(Tag = 1:tage,
+                        Lockdown = c(rep(FALSE,tage)),
+                        leisure_contact_reduction = (rep(FALSE,tage)),
+                        home_office = c(rep(FALSE,tage)),
+                        primary_school_closed = c(rep(FALSE,tage)),
+                        kindergarden_closed = c(rep(FALSE,tage)),
+                        school_closed = c(rep(FALSE,tage)))
+
+goverment$primary_school_closed[21:40] <- TRUE
+goverment$school_closed[21:40] <- TRUE
+goverment$home_office[21:40] <- TRUE
+goverment$leisure_contact_reduction[21:40] <- TRUE
+
+# MonteCarlo mit Lockdown ohne Kindergarden
+MonteCarlo_All_LockdownWithoutKindergardenClosed <- 
+  monte_carlo_simulation(agents_ff = agents,
+                         tage_ff = tage,
+                         type_of_contactfunctions_ff = type_of_contactfunctions,
+                         daten_wsk_ff = daten_wsk,
+                         goverment_ff = goverment,
+                         times_f = times,
+                         detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                         quarantine = TRUE)
+
+MonteCarlo_All_LockdownWithoutKindergardenClosed <- 
+  add_mean_and_ConfInt(MonteCarlo_All_LockdownWithoutKindergardenClosed)
+
+setwd("./results_data")
+save(MonteCarlo_All_LockdownWithoutKindergardenClosed, file = "MonteCarlo_All_LockdownWithoutKindergardenClosed.RData")
+setwd("..")
+
+plot_result_MonteCarlo(MonteCarlo_All_LockdownWithoutKindergardenClosed, agent_status = c("Neuinfektionen","I"))
+plot_result_MonteCarlo(MonteCarlo_All_LockdownWithoutKindergardenClosed, agent_status = c("I_", "I", "Q"))
+plot_result_MonteCarlo(MonteCarlo_All_LockdownWithoutKindergardenClosed, agent_status = c("Summe_ErkannteFaelle"))
+
+# Goverment erstellen
+goverment <- data.frame(Tag = 1:tage,
+                        Lockdown = c(rep(FALSE,tage)),
+                        leisure_contact_reduction = (rep(FALSE,tage)),
+                        home_office = c(rep(FALSE,tage)),
+                        primary_school_closed = c(rep(FALSE,tage)),
+                        kindergarden_closed = c(rep(FALSE,tage)),
+                        school_closed = c(rep(FALSE,tage)))
+
+goverment$leisure_contact_reduction[21:40] <- TRUE
+
+# MonteCarlo mit Lockdown ohne Kindergarden
+MonteCarlo_All_ContactReduction <- 
+  monte_carlo_simulation(agents_ff = agents,
+                         tage_ff = tage,
+                         type_of_contactfunctions_ff = type_of_contactfunctions,
+                         daten_wsk_ff = daten_wsk,
+                         goverment_ff = goverment,
+                         times_f = times,
+                         detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                         quarantine = TRUE)
+
+MonteCarlo_All_ContactReduction <- 
+  add_mean_and_ConfInt(MonteCarlo_All_ContactReduction)
+
+setwd("./results_data")
+save(MonteCarlo_All_ContactReduction, file = "MonteCarlo_All_ContactReduction.RData")
+setwd("..")
+
+plot_result_MonteCarlo(MonteCarlo_All_ContactReduction, agent_status = c("Neuinfektionen","I"))
+plot_result_MonteCarlo(MonteCarlo_All_ContactReduction, agent_status = c("I_", "I", "Q"))
+plot_result_MonteCarlo(MonteCarlo_All_ContactReduction, agent_status = c("Summe_ErkannteFaelle"))
+
+
+# Goverment erstellen
+goverment <- data.frame(Tag = 1:tage,
+                        Lockdown = c(rep(FALSE,tage)),
+                        leisure_contact_reduction = (rep(FALSE,tage)),
+                        home_office = c(rep(FALSE,tage)),
+                        primary_school_closed = c(rep(FALSE,tage)),
+                        kindergarden_closed = c(rep(FALSE,tage)),
+                        school_closed = c(rep(FALSE,tage)))
+
+goverment$primary_school_closed[21:40] <- TRUE
+goverment$school_closed[21:40] <- TRUE
+goverment$home_office[21:40] <- TRUE
+goverment$kindergarden_closed[21:40] <- TRUE
+
+# MonteCarlo mit Lockdown ohne Kindergarden
+MonteCarlo_All_NoContactReduction <- 
+  monte_carlo_simulation(agents_ff = agents,
+                         tage_ff = tage,
+                         type_of_contactfunctions_ff = type_of_contactfunctions,
+                         daten_wsk_ff = daten_wsk,
+                         goverment_ff = goverment,
+                         times_f = times,
+                         detection_wsk_per_agent_ff = detection_wsk_per_agent,
+                         quarantine = TRUE)
+
+MonteCarlo_All_NoContactReduction <- 
+  add_mean_and_ConfInt(MonteCarlo_All_NoContactReduction)
+
+setwd("./results_data")
+save(MonteCarlo_All_NoContactReduction, file = "MonteCarlo_All_NoContactReduction.RData")
+setwd("..")
+
+plot_result_MonteCarlo(MonteCarlo_All_NoContactReduction, agent_status = c("Neuinfektionen","I"))
+plot_result_MonteCarlo(MonteCarlo_All_NoContactReduction, agent_status = c("I_", "I", "Q"))
+plot_result_MonteCarlo(MonteCarlo_All_NoContactReduction, agent_status = c("Summe_ErkannteFaelle"))
+
+#-----------------------Resultate Plots--------------------------
+
+# Laden der Datensätze, falls Neustart!!!
+setwd("./results_data")
+load("MonteCarlo_All_ContactReduction.RData")
+load("MonteCarlo_All_Lockdown.RData")
+load("MonteCarlo_All_LockdownWithoutKindergardenClosed.RData")
+load("MonteCarlo_All_NoContactReduction.RData")
+load("MonteCarlo_All_Nothing.RData")
+setwd("..")
+
+# Zunaechst Ohne Lockdown
+temp_S <- MonteCarlo_All_Nothing %>%
+  filter(type == "S") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_I <- MonteCarlo_All_Nothing %>%
+  filter(type == "I") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_I_ <- MonteCarlo_All_Nothing %>%
+  filter(type == "I_") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Q <- MonteCarlo_All_Nothing %>%
+  filter(type == "Q") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_R <- MonteCarlo_All_Nothing %>%
+  filter(type == "R") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Neuinfektionen <- MonteCarlo_All_Nothing %>%
+  filter(type == "Neuinfektionen") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Summe_ErkannteFaelle <- MonteCarlo_All_Nothing %>%
+  filter(type == "Summe_ErkannteFaelle") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+plot_title <- "Verschiedenste Verläufe von Kennzahlen ohne Lockdown"
+
+col_name <- c("Erkannte Infektionen (Quarantäne)" = "blue",
+              "Infektiöse Unerkannte" = "darkgreen",
+              "Infizierte" = "red")
+
+g1 <- ggplot() +
+  geom_ribbon(data = temp_Q,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "blue", alpha = 0.5) +
+  geom_line(data = temp_Q,
+            aes(x = Tag, y = Schnitt, color = "Erkannte Infektionen (Quarantäne)")) +
+  geom_ribbon(data = temp_I_,
+              aes(x = Tag, ymin = lower, ymax = upper), 
+              fill = "darkgreen", alpha = 0.5) +
+  geom_line(data = temp_I_,
+            aes(x = Tag, y = Schnitt, color = "Infektiöse Unerkannte")) +
+  geom_ribbon(data = temp_I,
+              aes(x = Tag, ymin = lower, ymax = upper), 
+              fill = "red", alpha = 0.5) +
+  geom_line(data = temp_I,
+            aes(x = Tag, y = Schnitt, color = "Infizierte")) +
+  #ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  scale_color_manual(name = "", values = col_name) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5))
+
+#plot_title <- "Verlauf der immunen Agents ohne Lockdown"
+
+g2 <- ggplot() +
+  geom_ribbon(data = temp_Summe_ErkannteFaelle,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "grey", alpha = 0.5) +
+  geom_line(data = temp_Summe_ErkannteFaelle,
+            aes(x = Tag, y = Schnitt), color = "black") +
+  ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+g3 <- ggplot() +
+  geom_ribbon(data = temp_Neuinfektionen,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "black", alpha = 0.5) +
+  geom_line(data = temp_Neuinfektionen,
+            aes(x = Tag, y = Schnitt), color = "black") +
+  #ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# ggsave("/Users/danielkaras/Desktop/Masterarbeit/Latex_Template/Plots_und_Logos/plot_WithoutLockdown.png",
+#        gridExtra::arrangeGrob(g2,g1, g3))
+
+# Zunaechst mit Lockdown
+temp_S <- MonteCarlo_All_Lockdown %>%
+  filter(type == "S") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_I <- MonteCarlo_All_Lockdown %>%
+  filter(type == "I") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_I_ <- MonteCarlo_All_Lockdown %>%
+  filter(type == "I_") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Q <- MonteCarlo_All_Lockdown %>%
+  filter(type == "Q") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_R <- MonteCarlo_All_Lockdown %>%
+  filter(type == "R") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Neuinfektionen <- MonteCarlo_All_Lockdown %>%
+  filter(type == "Neuinfektionen") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Summe_ErkannteFaelle <- MonteCarlo_All_Lockdown %>%
+  filter(type == "Summe_ErkannteFaelle") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+plot_title <- "Verschiedenste Verläufe von Kennzahlen bei Lockdown"
+
+col_name <- c("Erkannte Infektionen (Quarantäne)" = "blue",
+              "Infektiöse Unerkannte" = "darkgreen",
+              "Infizierte" = "red")
+
+g1 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Q,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "blue", alpha = 0.5) +
+  geom_line(data = temp_Q,
+            aes(x = Tag, y = Schnitt, color = "Erkannte Infektionen (Quarantäne)")) +
+  geom_ribbon(data = temp_I_,
+              aes(x = Tag, ymin = lower, ymax = upper), 
+              fill = "darkgreen", alpha = 0.5) +
+  geom_line(data = temp_I_,
+            aes(x = Tag, y = Schnitt, color = "Infektiöse Unerkannte")) +
+  geom_ribbon(data = temp_I,
+              aes(x = Tag, ymin = lower, ymax = upper), 
+              fill = "red", alpha = 0.5) +
+  geom_line(data = temp_I,
+            aes(x = Tag, y = Schnitt, color = "Infizierte")) +
+  #ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  scale_color_manual(name = "", values = col_name) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5))
+
+#plot_title <- "Verlauf der Summe der Erkannten Fälle bei Lockdown"
+
+g2 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Summe_ErkannteFaelle,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "black", alpha = 0.5) +
+  geom_line(data = temp_Summe_ErkannteFaelle,
+            aes(x = Tag, y = Schnitt), color = "black") +
+  # geom_hline(aes(yintercept = 0.8 * length(agents$Id_agent)), 
+  #            color = "red", 
+  #            alpha = 0.5) +
+  ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#plot_title <- "Verlauf der Neuinfektionen bei Lockdown"
+
+g3 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Neuinfektionen,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "black", alpha = 0.5) +
+  geom_line(data = temp_Neuinfektionen,
+            aes(x = Tag, y = Schnitt), color = "black") +
+  #ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# ggsave("/Users/danielkaras/Desktop/Masterarbeit/Latex_Template/Plots_und_Logos/plot_WithLockdown.png",
+#        gridExtra::arrangeGrob(g2, g1, g3))
+
+# Zunaechst mit Lockdown
+temp_S <- MonteCarlo_All_LockdownWithoutKindergardenClosed %>%
+  filter(type == "S") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_I <- MonteCarlo_All_LockdownWithoutKindergardenClosed %>%
+  filter(type == "I") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_I_ <- MonteCarlo_All_LockdownWithoutKindergardenClosed %>%
+  filter(type == "I_") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Q <- MonteCarlo_All_LockdownWithoutKindergardenClosed %>%
+  filter(type == "Q") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_R <- MonteCarlo_All_LockdownWithoutKindergardenClosed %>%
+  filter(type == "R") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Neuinfektionen <- MonteCarlo_All_LockdownWithoutKindergardenClosed %>%
+  filter(type == "Neuinfektionen") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Summe_ErkannteFaelle <- MonteCarlo_All_LockdownWithoutKindergardenClosed %>%
+  filter(type == "Summe_ErkannteFaelle") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+plot_title <- "Verschiedenste Verläufe von Kennzahlen ohne Kindergartenschließung"
+
+col_name <- c("Erkannte Infektionen (Quarantäne)" = "blue",
+              "Infektiöse Unerkannte" = "darkgreen",
+              "Infizierte" = "red")
+
+g1 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Q,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "blue", alpha = 0.5) +
+  geom_line(data = temp_Q,
+            aes(x = Tag, y = Schnitt, color = "Erkannte Infektionen (Quarantäne)")) +
+  geom_ribbon(data = temp_I_,
+              aes(x = Tag, ymin = lower, ymax = upper), 
+              fill = "darkgreen", alpha = 0.5) +
+  geom_line(data = temp_I_,
+            aes(x = Tag, y = Schnitt, color = "Infektiöse Unerkannte")) +
+  geom_ribbon(data = temp_I,
+              aes(x = Tag, ymin = lower, ymax = upper), 
+              fill = "red", alpha = 0.5) +
+  geom_line(data = temp_I,
+            aes(x = Tag, y = Schnitt, color = "Infizierte")) +
+  #ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  scale_color_manual(name = "", values = col_name) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5))
+
+#plot_title <- "Verlauf der Summe der Erkannten Fälle bei Lockdown"
+
+g2 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Summe_ErkannteFaelle,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "black", alpha = 0.5) +
+  geom_line(data = temp_Summe_ErkannteFaelle,
+            aes(x = Tag, y = Schnitt), color = "black") +
+  # geom_hline(aes(yintercept = 0.8 * length(agents$Id_agent)), 
+  #            color = "red", 
+  #            alpha = 0.5) +
+  ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#plot_title <- "Verlauf der Neuinfektionen bei Lockdown"
+
+g3 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Neuinfektionen,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "black", alpha = 0.5) +
+  geom_line(data = temp_Neuinfektionen,
+            aes(x = Tag, y = Schnitt), color = "black") +
+  #ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# ggsave("/Users/danielkaras/Desktop/Masterarbeit/Latex_Template/Plots_und_Logos/plot_WithLockdownAndWithoutKindergarden.png",
+#        gridExtra::arrangeGrob(g2, g1, g3))
+
+# Zunaechst mit Lockdown
+temp_S <- MonteCarlo_All_ContactReduction %>%
+  filter(type == "S") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_I <- MonteCarlo_All_ContactReduction %>%
+  filter(type == "I") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_I_ <- MonteCarlo_All_ContactReduction %>%
+  filter(type == "I_") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Q <- MonteCarlo_All_ContactReduction %>%
+  filter(type == "Q") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_R <- MonteCarlo_All_ContactReduction %>%
+  filter(type == "R") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Neuinfektionen <- MonteCarlo_All_ContactReduction %>%
+  filter(type == "Neuinfektionen") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Summe_ErkannteFaelle <- MonteCarlo_All_ContactReduction %>%
+  filter(type == "Summe_ErkannteFaelle") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+plot_title <- "Verschiedenste Verläufe von Kennzahlen bei Freizeitkontaktreduktion"
+
+col_name <- c("Erkannte Infektionen (Quarantäne)" = "blue",
+              "Infektiöse Unerkannte" = "darkgreen",
+              "Infizierte" = "red")
+
+g1 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Q,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "blue", alpha = 0.5) +
+  geom_line(data = temp_Q,
+            aes(x = Tag, y = Schnitt, color = "Erkannte Infektionen (Quarantäne)")) +
+  geom_ribbon(data = temp_I_,
+              aes(x = Tag, ymin = lower, ymax = upper), 
+              fill = "darkgreen", alpha = 0.5) +
+  geom_line(data = temp_I_,
+            aes(x = Tag, y = Schnitt, color = "Infektiöse Unerkannte")) +
+  geom_ribbon(data = temp_I,
+              aes(x = Tag, ymin = lower, ymax = upper), 
+              fill = "red", alpha = 0.5) +
+  geom_line(data = temp_I,
+            aes(x = Tag, y = Schnitt, color = "Infizierte")) +
+  #ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  scale_color_manual(name = "", values = col_name) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5))
+
+#plot_title <- "Verlauf der Summe der Erkannten Fälle bei Lockdown"
+
+g2 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Summe_ErkannteFaelle,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "black", alpha = 0.5) +
+  geom_line(data = temp_Summe_ErkannteFaelle,
+            aes(x = Tag, y = Schnitt), color = "black") +
+  # geom_hline(aes(yintercept = 0.8 * length(agents$Id_agent)), 
+  #            color = "red", 
+  #            alpha = 0.5) +
+  ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#plot_title <- "Verlauf der Neuinfektionen bei Lockdown"
+
+g3 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Neuinfektionen,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "black", alpha = 0.5) +
+  geom_line(data = temp_Neuinfektionen,
+            aes(x = Tag, y = Schnitt), color = "black") +
+  #ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# ggsave("/Users/danielkaras/Desktop/Masterarbeit/Latex_Template/Plots_und_Logos/plot_WithContactReduction.png",
+#        gridExtra::arrangeGrob(g2, g1, g3))
+
+# Zunaechst mit Lockdown
+temp_S <- MonteCarlo_All_NoContactReduction %>%
+  filter(type == "S") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_I <- MonteCarlo_All_NoContactReduction %>%
+  filter(type == "I") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_I_ <- MonteCarlo_All_NoContactReduction %>%
+  filter(type == "I_") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Q <- MonteCarlo_All_NoContactReduction %>%
+  filter(type == "Q") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_R <- MonteCarlo_All_NoContactReduction %>%
+  filter(type == "R") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Neuinfektionen <- MonteCarlo_All_NoContactReduction %>%
+  filter(type == "Neuinfektionen") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+temp_Summe_ErkannteFaelle <- MonteCarlo_All_NoContactReduction %>%
+  filter(type == "Summe_ErkannteFaelle") %>%
+  filter(Durchlauf %in% c("lower", "upper", "Schnitt")) %>%
+  pivot_wider(names_from = Durchlauf, values_from = Wert)
+
+plot_title <- "Verschiedenste Verläufe von Kennzahlen ohne Freizeitkontaktreduktion"
+
+col_name <- c("Erkannte Infektionen (Quarantäne)" = "blue",
+              "Infektiöse Unerkannte" = "darkgreen",
+              "Infizierte" = "red")
+
+g1 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Q,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "blue", alpha = 0.5) +
+  geom_line(data = temp_Q,
+            aes(x = Tag, y = Schnitt, color = "Erkannte Infektionen (Quarantäne)")) +
+  geom_ribbon(data = temp_I_,
+              aes(x = Tag, ymin = lower, ymax = upper), 
+              fill = "darkgreen", alpha = 0.5) +
+  geom_line(data = temp_I_,
+            aes(x = Tag, y = Schnitt, color = "Infektiöse Unerkannte")) +
+  geom_ribbon(data = temp_I,
+              aes(x = Tag, ymin = lower, ymax = upper), 
+              fill = "red", alpha = 0.5) +
+  geom_line(data = temp_I,
+            aes(x = Tag, y = Schnitt, color = "Infizierte")) +
+  #ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  scale_color_manual(name = "", values = col_name) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5))
+
+#plot_title <- "Verlauf der Summe der Erkannten Fälle bei Lockdown"
+
+g2 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Summe_ErkannteFaelle,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "black", alpha = 0.5) +
+  geom_line(data = temp_Summe_ErkannteFaelle,
+            aes(x = Tag, y = Schnitt), color = "black") +
+  # geom_hline(aes(yintercept = 0.8 * length(agents$Id_agent)), 
+  #            color = "red", 
+  #            alpha = 0.5) +
+  ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#plot_title <- "Verlauf der Neuinfektionen bei Lockdown"
+
+g3 <- ggplot() +
+  geom_rect(aes(xmin=21, xmax=40, ymin=0, ymax=Inf), fill = "grey", alpha = 0.5) +
+  geom_ribbon(data = temp_Neuinfektionen,
+              aes(x = Tag, ymin = lower, ymax = upper),
+              fill = "black", alpha = 0.5) +
+  geom_line(data = temp_Neuinfektionen,
+            aes(x = Tag, y = Schnitt), color = "black") +
+  #ggtitle(plot_title) +
+  ylab("Anzahl") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# ggsave("/Users/danielkaras/Desktop/Masterarbeit/Latex_Template/Plots_und_Logos/plot_WithoutContactReduction.png",
+#        gridExtra::arrangeGrob(g2, g1, g3))
 
 #----------------------------------------------------------------
 
